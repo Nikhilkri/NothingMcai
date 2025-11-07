@@ -1,14 +1,42 @@
-// This is the client-side JavaScript.
-// It's almost the same, but the backend URL is now MUCH simpler.
+// This file is now MUCH smarter.
+// It handles login, logout, and the generator.
 
 // ! ! ! IMPORTANT ! ! !
+// This is where you paste the `firebaseConfig` object you copied from Firebase.
+const firebaseConfig = {
+  apiKey: "AIzaSy...PASTE_YOUR_KEY_HERE...",
+  authDomain: "PASTE_YOUR_DOMAIN_HERE",
+  projectId: "PASTE_YOUR_PROJECT_ID_HERE",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};
+// ! ! ! IMPORTANT ! ! !
+
+
+// Initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore(); // We will use this database in the NEXT step.
+
 // We don't need a full URL. We just call our own website's API folder.
-const BACKEND_URL = ''; // This is all we need!
+const BACKEND_URL = '';
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Get all the new Login/Logout buttons
+    const authContainer = document.getElementById('auth-container');
+    const loginButton = document.getElementById('loginButton');
+    const logoutButton = document.getElementById('logoutButton');
+    const userInfo = document.getElementById('userInfo');
+    const userName = document.getElementById('userName');
+    
+    // Get the main content sections
+    const mainContent = document.getElementById('mainContent');
+    const loginMessage = document.getElementById('loginMessage');
+    
+    // Get all the "Generator" buttons (same as before)
     const generateButton = document.getElementById('generateButton');
     const buildButton = document.getElementById('buildButton');
-    // ... (all the other element selectors are the same) ...
     const promptInput = document.getElementById('promptInput');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const outputSection = document.getElementById('outputSection');
@@ -19,7 +47,60 @@ document.addEventListener('DOMContentLoaded', () => {
     const buildResult = document.getElementById('buildResult');
     const downloadLink = document.getElementById('downloadLink');
 
+    // --- NEW AUTHENTICATION LOGIC ---
+
+    // This is the "brain" that listens for login/logout
+    auth.onAuthStateChanged(user => {
+        if (user) {
+            // --- User is LOGGED IN ---
+            console.log("User is logged in:", user.displayName);
+            // Show the main generator content, hide login message
+            mainContent.classList.remove('hidden');
+            loginMessage.classList.add('hidden');
+            
+            // Update the navigation bar
+            userName.textContent = user.displayName; // Show user's name
+            userInfo.classList.remove('hidden');
+            loginButton.classList.add('hidden');
+            
+            // We can now see the auth container
+            authContainer.style.display = 'flex';
+            
+        } else {
+            // --- User is LOGGED OUT ---
+            console.log("User is logged out.");
+            // Hide the main generator content, show login message
+            mainContent.classList.add('hidden');
+            loginMessage.classList.remove('hidden');
+            
+            // Update the navigation bar
+            userInfo.classList.add('hidden');
+            loginButton.classList.remove('hidden');
+            
+            // We can now see the auth container
+            authContainer.style.display = 'flex';
+        }
+    });
+
+    // Handle Google Login button click
+    loginButton.addEventListener('click', () => {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        auth.signInWithPopup(provider).catch(error => {
+            console.error("Login Error:", error);
+            showError("Failed to log in with Google: " + error.message);
+        });
+    });
+
+    // Handle Logout button click
+    logoutButton.addEventListener('click', () => {
+        auth.signOut();
+    });
+
+    // --- ORIGINAL GENERATOR LOGIC (No changes needed) ---
+
     generateButton.addEventListener('click', async () => {
+        // This function is identical to our previous version.
+        // It's just inside the 'DOMContentLoaded' event now.
         const prompt = promptInput.value;
         if (!prompt) {
             showError("Please enter a prompt.");
@@ -31,7 +112,6 @@ document.addEventListener('DOMContentLoaded', () => {
         generateButton.classList.add('btn-disabled');
 
         try {
-            // This now calls '/api/generate' on our own website
             const response = await fetch(`${BACKEND_URL}/api/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -62,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     buildButton.addEventListener('click', async () => {
+        // This function is also identical
         buildButton.disabled = true;
         buildButton.classList.add('btn-disabled');
         buildResult.classList.add('hidden');
@@ -71,7 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const ymlCode = pluginYmlContent.textContent;
 
         try {
-            // This now calls '/api/build' on our own website
             const response = await fetch(`${BACKEND_URL}/api/build`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -84,7 +164,8 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadLink.download = "MyPlugin-simulated.jar";
             buildLoading.classList.add('hidden');
             buildResult.classList.remove('hidden');
-        } catch (err) {
+        } catch (err)
+ {
             showError(err.message);
             buildLoading.classList.add('hidden');
         }

@@ -142,7 +142,7 @@ function showUnauthenticatedUI() {
     navigateTo('home');
 }
 
-// --- 7. PROJECT LISTING ---
+// --- 7. PROJECT LISTING & DELETION ---
 
 function listenForProjects(userId) {
     const projectsRef = db.collection('users').doc(userId).collection('projects').orderBy('createdAt', 'desc');
@@ -161,21 +161,31 @@ function listenForProjects(userId) {
             const projectItem = document.createElement('div');
             projectItem.className = 'project-list-item p-4 rounded-lg flex justify-between items-center';
             projectItem.innerHTML = `
-                <div>
+                <div class="flex-grow">
                     <h3 class="text-lg font-medium">${project.name}</h3>
                     <p class="text-sm text-gray-400">ID: ${projectId.substring(0, 8)}...</p>
                 </div>
-                <button class="open-button px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500" data-project-id="${projectId}">
-                    Open Editor
-                </button>
+                <div class="flex space-x-2">
+                    <button class="open-button px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500 text-sm" data-project-id="${projectId}">
+                        Open Editor
+                    </button>
+                    <button class="delete-button p-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-500 text-sm" data-project-id="${projectId}">
+                        Delete
+                    </button>
+                </div>
             `;
             projectsList.appendChild(projectItem);
         });
 
-        // Event delegation for opening the editor
+        // Event delegation for opening and deleting
         projectsList.querySelectorAll('.open-button').forEach(button => {
             button.addEventListener('click', (e) => {
                 navigateTo('editor', e.target.dataset.projectId);
+            });
+        });
+        projectsList.querySelectorAll('.delete-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                handleDeleteClick(e.target.dataset.projectId, e.target);
             });
         });
     }, error => {
@@ -183,6 +193,36 @@ function listenForProjects(userId) {
         projectsList.innerHTML = `<p class="text-red-400">Error loading projects.</p>`;
     });
 }
+
+async function handleDeleteClick(projectId, button) {
+    if (!user) return showError('You must be logged in.');
+
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Deleting...';
+
+    // Simple custom confirmation (since we can't use alert/confirm)
+    if (!window.confirm(`Are you sure you want to delete project ${projectId.substring(0, 8)}...? This cannot be undone.`)) {
+        button.textContent = originalText;
+        button.disabled = false;
+        return;
+    }
+
+    try {
+        await db.collection('users').doc(user.uid).collection('projects').doc(projectId).delete();
+        
+        // Success is handled by the onSnapshot listener, which automatically removes the item.
+        // Provide visual feedback if the listener is slow.
+        button.textContent = 'Deleted!';
+
+    } catch (error) {
+        console.error("Delete Error:", error);
+        showError('Failed to delete project: ' + error.message);
+        button.textContent = 'Failed!';
+        setTimeout(() => { button.textContent = originalText; button.disabled = false; }, 3000);
+    }
+}
+
 
 // --- 8. PROJECT GENERATION (Directs to Editor) ---
 
@@ -243,8 +283,9 @@ async function loadProject(projectId) {
             return showError('Project not found.', editorProjectName);
         }
 
+        const projectData = doc.data();
         // Add a temporary owner field for the compile link
-        currentProject = { id: doc.id, owner: user.uid, ...doc.data() }; 
+        currentProject = { id: doc.id, owner: user.uid, ...projectData }; 
         editorProjectName.textContent = currentProject.name;
         
         // Populate Editor
@@ -253,8 +294,8 @@ async function loadProject(projectId) {
         // Populate File Explorer
         renderFileExplorer();
         
-        // Populate Chat (Initial explanation)
-        renderAiExplanation(currentProject.explanation);
+        // Populate Chat (Initial explanation and prompt feedback)
+        renderEditorChat(projectData.explanation, projectData.name);
         
         // Set up editor event listeners 
         saveButton.removeEventListener('click', handleSaveClick);
@@ -298,8 +339,12 @@ function displayFile(fileKey) {
     renderFileExplorer();
 }
 
-function renderAiExplanation(explanation) {
+function renderEditorChat(explanation, prompt) {
     chatWindow.innerHTML = `
+        <div class="chat-message ai-message rounded-lg p-3 text-sm">
+            <h4 class="font-bold text-indigo-300 mb-2">Your Prompt:</h4>
+            <p class="text-gray-400 italic">${prompt}</p>
+        </div>
         <div class="chat-message ai-message rounded-lg p-3 text-sm">
             <h4 class="font-bold text-indigo-300 mb-2">AI Explanation:</h4>
             ${explanation.replace(/\n/g, '<br>')}
@@ -420,4 +465,4 @@ async function handleChatSendClick() {
         </div>
     `;
     chatWindow.scrollTop = chatWindow.scrollHeight;
-              }
+}

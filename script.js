@@ -4,12 +4,13 @@
 // ! ! ! IMPORTANT ! ! !
 // This is where you paste the `firebaseConfig` object you copied from Firebase.
 const firebaseConfig = {
-  apiKey: "AIzaSy...PASTE_YOUR_KEY_HERE...",
-  authDomain: "PASTE_YOUR_DOMAIN_HERE",
-  projectId: "PASTE_YOUR_PROJECT_ID_HERE",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "..."
+  apiKey: "AIzaSyAj4KrhPiKw3CZwG2EUJ-sif04qF09zwJo",
+  authDomain: "nothing-ai-bd3dd.firebaseapp.com",
+  projectId: "nothing-ai-bd3dd",
+  storageBucket: "nothing-ai-bd3dd.firebasestorage.app",
+  messagingSenderId: "442150692363",
+  appId: "1:442150692363:web:27a04a4543d8977dc0890e",
+  measurementId: "G-MW5B6PQEYP"
 };
 // ! ! ! IMPORTANT ! ! !
 

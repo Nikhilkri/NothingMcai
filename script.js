@@ -18,9 +18,8 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.firestore(); // We will use this database in the NEXT step.
+const db = firebase.firestore(); 
 
-// We don't need a full URL. We just call our own website's API folder.
 const BACKEND_URL = '';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -48,42 +47,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const buildResult = document.getElementById('buildResult');
     const downloadLink = document.getElementById('downloadLink');
 
-    // --- NEW AUTHENTICATION LOGIC ---
+    // --- NEW LOADING INDICATOR TEXT ---
+    const loadingText = document.querySelector('#loadingIndicator p'); // Get the text element
 
-    // This is the "brain" that listens for login/logout
+    // --- AUTHENTICATION LOGIC (Same as before) ---
     auth.onAuthStateChanged(user => {
         if (user) {
-            // --- User is LOGGED IN ---
-            console.log("User is logged in:", user.displayName);
-            // Show the main generator content, hide login message
             mainContent.classList.remove('hidden');
             loginMessage.classList.add('hidden');
-            
-            // Update the navigation bar
-            userName.textContent = user.displayName; // Show user's name
+            userName.textContent = user.displayName;
             userInfo.classList.remove('hidden');
             loginButton.classList.add('hidden');
-            
-            // We can now see the auth container
             authContainer.style.display = 'flex';
-            
         } else {
-            // --- User is LOGGED OUT ---
-            console.log("User is logged out.");
-            // Hide the main generator content, show login message
             mainContent.classList.add('hidden');
             loginMessage.classList.remove('hidden');
-            
-            // Update the navigation bar
             userInfo.classList.add('hidden');
             loginButton.classList.remove('hidden');
-            
-            // We can now see the auth container
             authContainer.style.display = 'flex';
         }
     });
-
-    // Handle Google Login button click
     loginButton.addEventListener('click', () => {
         const provider = new firebase.auth.GoogleAuthProvider();
         auth.signInWithPopup(provider).catch(error => {
@@ -91,42 +74,70 @@ document.addEventListener('DOMContentLoaded', () => {
             showError("Failed to log in with Google: " + error.message);
         });
     });
+    logoutButton.addEventListener('click', () => { auth.signOut(); });
 
-    // Handle Logout button click
-    logoutButton.addEventListener('click', () => {
-        auth.signOut();
-    });
-
-    // --- ORIGINAL GENERATOR LOGIC (No changes needed) ---
-
+    // --- *** UPDATED GENERATOR LOGIC *** ---
     generateButton.addEventListener('click', async () => {
-        // This function is identical to our previous version.
-        // It's just inside the 'DOMContentLoaded' event now.
         const prompt = promptInput.value;
         if (!prompt) {
             showError("Please enter a prompt.");
             return;
         }
+        
+        // Check if user is logged in
+        const user = auth.currentUser;
+        if (!user) {
+            showError("You must be logged in to generate a plugin.");
+            return;
+        }
+
         resetUI();
+        loadingText.textContent = "Contacting REAL AI... this may take a moment."; // Set text
         loadingIndicator.classList.remove('hidden');
         generateButton.disabled = true;
         generateButton.classList.add('btn-disabled');
 
+        let generatedData; // To store AI response
+
         try {
+            // --- Step 1: Call the AI (Same as before) ---
             const response = await fetch(`${BACKEND_URL}/api/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt: prompt })
             });
-
-            const data = await response.json();
-
+            generatedData = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Unknown server error');
+                throw new Error(generatedData.error || 'Unknown server error');
             }
 
-            pluginYmlContent.textContent = data.pluginYml;
-            mainJavaContent.textContent = data.mainJava;
+            // --- Step 2: NEW! Save to Database ---
+            loadingText.textContent = "Saving project to your account..."; // Update text
+            
+            // Get the user's secret ID Token
+            const idToken = await user.getIdToken();
+
+            const saveResponse = await fetch(`${BACKEND_URL}/api/saveProject`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    idToken: idToken,
+                    prompt: prompt,
+                    pluginYml: generatedData.pluginYml,
+                    mainJava: generatedData.mainJava
+                })
+            });
+
+            const saveData = await saveResponse.json();
+            if (!saveResponse.ok) {
+                throw new Error(saveData.error || 'Failed to save project');
+            }
+
+            console.log("Project saved successfully!", saveData.projectId);
+
+            // --- Step 3: Show results (Same as before) ---
+            pluginYmlContent.textContent = generatedData.pluginYml;
+            mainJavaContent.textContent = generatedData.mainJava;
 
             loadingIndicator.classList.add('hidden');
             outputSection.classList.remove('hidden');
@@ -142,8 +153,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- BUILD BUTTON LOGIC (Same as before) ---
     buildButton.addEventListener('click', async () => {
-        // This function is also identical
         buildButton.disabled = true;
         buildButton.classList.add('btn-disabled');
         buildResult.classList.add('hidden');
@@ -165,14 +176,13 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadLink.download = "MyPlugin-simulated.jar";
             buildLoading.classList.add('hidden');
             buildResult.classList.remove('hidden');
-        } catch (err)
- {
+        } catch (err) {
             showError(err.message);
             buildLoading.classList.add('hidden');
         }
     });
     
-    // ... (the rest of the helper functions are identical) ...
+    // Helper functions (Same as before)
     function showError(message) {
         errorMessage.textContent = 'Error: ' + message;
         errorMessage.classList.remove('hidden');

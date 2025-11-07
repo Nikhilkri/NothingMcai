@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-TRF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nothing AI - Minecraft Plugin Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        gray: {
+                            900: '#1a1a1a',
+                            800: '#2a2a2a',
+                            700: '#3a3a3a',
+                            600: '#4a4a4a',
+                            500: '#6a6a6a',
+                            400: '#9a9a9a',
+                            300: '#c9c9c9',
+                            200: '#e0e0e0',
+                            100: '#f5f5f5',
+                        },
+                        blue: {
+                            500: '#3b82f6',
+                            600: '#2563eb',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .code-block {
+            background-color: #0d1117; /* GitHub dark editor color */
+            font-family: 'Courier New', Courier, monospace;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-x: auto;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+        }
+        .tab-button.active {
+            border-color: #3b82f6;
+            color: #3b82f6;
+            background-color: #3b82f61a;
+        }
+        .tab-button {
+            border-bottom: 2px solid transparent;
+        }
+        .btn {
+            @apply px-4 py-2 rounded-lg font-semibold transition-all duration-200;
+        }
+        .btn-primary {
+            @apply bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/30;
+        }
+        .btn-secondary {
+            @apply bg-gray-700 text-gray-200 hover:bg-gray-600;
+        }
+        .btn-disabled {
+            @apply bg-gray-600 text-gray-400 cursor-not-allowed;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-gray-800 shadow-md border-b border-gray-700">
+        <nav class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="text-2xl font-bold text-white">
+                Nothing AI
+            </div>
+            <div>
+                <!-- 
+                  LOGIN SYSTEM NOTE:
+                  This is a placeholder. A real login system requires a backend database 
+                  (like Firebase Auth or Supabase) to store users. 
+                  You CANNOT build a secure login system with only HTML.
+                -->
+                <button id="loginButton" class="btn btn-primary">Login</button>
+                <div id="userProfile" class="hidden items-center gap-3">
+                    <span id="userName" class="text-sm">Welcome, user!</span>
+                    <button id="logoutButton" class="btn btn-secondary text-sm">Logout</button>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto p-4 flex-grow w-full max-w-6xl">
+        <div class="bg-gray-800 rounded-xl shadow-2xl p-6 md:p-8">
+            <h1 class="text-3xl font-bold mb-2">Create a Paper Plugin</h1>
+            <p class="text-gray-400 mb-6">Describe your plugin in plain English. The AI will generate all the necessary files.</p>
+
+            <!-- Prompt Input -->
+            <div class="mb-6">
+                <textarea id="promptInput" rows="4" class="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500" placeholder="e.g., 'A plugin that gives a player speed 2 when they type /speed'"></textarea>
+                <button id="generateButton" class="btn btn-primary mt-3 w-full sm:w-auto">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block -mt-1 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd" />
+                    </svg>
+                    Generate Plugin
+                </button>
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loadingIndicator" class="hidden text-center my-10">
+                <div class="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-blue-500 border-r-transparent" role="status">
+                    <span class="!absolute !-m-px !h-px !w-px !overflow-hidden !whitespace-nowrap !border-0 !p-0 ![clip:rect(0,0,0,0)]">Loading...</span>
+                </div>
+                <p class="mt-3 text-gray-400">AI is thinking... this may take a moment.</p>
+            </div>
+
+            <!-- Error Message -->
+            <div id="errorMessage" class="hidden p-4 bg-red-800 border border-red-600 text-red-200 rounded-lg">
+                <strong class="font-bold">Error:</strong>
+                <span id="errorText"></span>
+            </div>
+
+            <!-- Generated Files Output -->
+            <div id="outputSection" class="hidden">
+                <h2 class="text-2xl font-semibold mb-4">Generated Files</h2>
+
+                <!-- File Tabs -->
+                <div class="flex border-b border-gray-700 mb-4">
+                    <button class="tab-button active px-4 py-2" data-tab="plugin-yml">plugin.yml</button>
+                    <button class="tab-button px-4 py-2" data-tab="main-java">Main.java</button>
+                </div>
+
+                <!-- File Content -->
+                <div id="fileContent">
+                    <div id="tab-plugin-yml" class="tab-content">
+                        <pre class="code-block"><code id="pluginYmlContent"># Your plugin.yml will appear here</code></pre>
+                    </div>
+                    <div id="tab-main-java" class="tab-content hidden">
+                        <pre class="code-block"><code id="mainJavaContent">// Your Main.java will appear here</code></pre>
+                    </div>
+                </div>
+
+                <!-- Actions: Compile & Build -->
+                <div class="mt-6 pt-6 border-t border-gray-700">
+                    <h3 class="text-xl font-semibold mb-3">Actions</h3>
+                    <div class="flex flex-col sm:flex-row gap-4">
+                        <button id="compileButton" class="btn btn-secondary w-full sm:w-auto btn-disabled" disabled>
+                            1. Compile Code
+                        </button>
+                        <button id="buildButton" class="btn btn-secondary w-full sm:w-auto btn-disabled" disabled>
+                            2. Build .jar File
+                        </button>
+                        <div id="buildResult" class="hidden items-center gap-2">
+                            <span class="text-green-400">Build Successful!</span>
+                            <a id="downloadLink" class="btn btn-primary">Download plugin.jar</a>
+                        </div>
+                    </div>
+                    <div class="mt-4 p-3 bg-gray-700/50 border border-gray-600 rounded-lg text-gray-400 text-sm">
+                        <strong class="text-yellow-400">Important Technical Note:</strong>
+                        <p>This is a frontend demo. The "Compile" and "Build" features require a backend server to run the Java compiler (`javac`) and the `jar` builder. This CANNOT be done from a GitHub Pages site directly.</p>
+                        <p class="mt-2">A real app would send the code to a secure server, which would compile it and send back the `.jar` file.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center p-4 text-gray-500 text-sm">
+        Powered by Nothing AI. This is a frontend demo.
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const generateButton = document.getElementById('generateButton');
+            const promptInput = document.getElementById('promptInput');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const outputSection = document.getElementById('outputSection');
+            const errorMessage = document.getElementById('errorMessage');
+            const errorText = document.getElementById('errorText');
+
+            const pluginYmlContent = document.getElementById('pluginYmlContent');
+            const mainJavaContent = document.getElementById('mainJavaContent');
+            
+            const compileButton = document.getElementById('compileButton');
+            const buildButton = document.getElementById('buildButton');
+            const buildResult = document.getElementById('buildResult');
+            const downloadLink = document.getElementById('downloadLink');
+
+            const tabs = document.querySelectorAll('.tab-button');
+            const tabContents = document.querySelectorAll('.tab-content');
+
+            // --- Tab Switching Logic ---
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+
+                    const target = tab.getAttribute('data-tab');
+                    tabContents.forEach(content => {
+                        if (content.id === `tab-${target}`) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+
+            // --- Generate Button Logic ---
+            generateButton.addEventListener('click', () => {
+                const prompt = promptInput.value;
+                if (!prompt) {
+                    showError("Please enter a plugin description first.");
+                    return;
+                }
+                
+                startGeneration(prompt);
+            });
+
+            function showError(message) {
+                errorText.textContent = message;
+                errorMessage.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
+            }
+
+            function resetUI() {
+                errorMessage.classList.add('hidden');
+                outputSection.classList.add('hidden');
+                loadingIndicator.classList.add('hidden');
+                compileButton.classList.add('btn-disabled');
+                compileButton.disabled = true;
+                buildButton.classList.add('btn-disabled');
+                buildButton.disabled = true;
+                buildResult.classList.add('hidden');
+            }
+
+            async function startGeneration(prompt) {
+                resetUI();
+                loadingIndicator.classList.remove('hidden');
+                
+                // =================================================================
+                // IMPORTANT: THIS IS WHERE THE AI API CALL HAPPENS
+                // =================================================================
+                // In a real application, this JavaScript would call a secure
+                // backend server, which would then call the AI API (e.g., Google
+                // Gemini API).
+                //
+                // You CANNOT put the AI API key directly in this file, as
+                // anyone could steal it from your website.
+                //
+                // For this demo, we will use FAKE data and a delay.
+                // =================================================================
+                
+                try {
+                    // This is a fake delay to simulate the AI thinking
+                    await new Promise(resolve => setTimeout(resolve, 2500));
+
+                    // --- FAKE AI RESPONSE ---
+                    // A real AI would generate this based on the prompt.
+                    const fakePluginYml = 
+`name: MySpeedPlugin
+version: 1.0
+main: com.nothingai.myspeedplugin.MySpeedPlugin
+api-version: 1.19
+commands:
+  speed:
+    description: Gives the player speed 2.
+    usage: /speed`;
+                    
+                    const fakeMainJava = 
+`package com.nothingai.myspeedplugin;
+
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
+import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+
+public class MySpeedPlugin extends JavaPlugin implements CommandExecutor {
+
+    @Override
+    public void onEnable() {
+        getLogger().info("MySpeedPlugin has been enabled!");
+        this.getCommand("speed").setExecutor(this);
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
+        if (cmd.getName().equalsIgnoreCase("speed")) {
+            if (sender instanceof Player) {
+                Player player = (Player) sender;
+                
+                // Add Speed 2 potion effect for 30 seconds (600 ticks)
+                player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 600, 1));
+                player.sendMessage("You now have speed!");
+                return true;
+            } else {
+                sender.sendMessage("This command can only be run by a player.");
+                return false;
+            }
+        }
+        return false;
+    }
+
+    @Override
+    public void onDisable() {
+        getLogger().info("MySpeedPlugin has been disabled.");
+    }
+}`;
+                    
+                    // --- Update the UI with the fake data ---
+                    pluginYmlContent.textContent = fakePluginYml;
+                    mainJavaContent.textContent = fakeMainJava;
+                    
+                    loadingIndicator.classList.add('hidden');
+                    outputSection.classList.remove('hidden');
+                    
+                    // Enable the "Compile" button
+                    compileButton.classList.remove('btn-disabled');
+                    compileButton.disabled = false;
+
+                } catch (error) {
+                    console.error("Error during generation:", error);
+                    showError("An unknown error occurred while contacting the AI.");
+                }
+            }
+
+            // --- Compile Button Logic ---
+            compileButton.addEventListener('click', () => {
+                // =================================================================
+                // CRITICAL NOTE: This is impossible in GitHub Pages.
+                // =================================================================
+                // You cannot run the Java Compiler (javac) in a browser.
+                // A real app would send the code from the text areas to a
+                // backend server, which would save the files and run `javac`.
+                //
+                // We will simulate this with a fake delay.
+                // =================================================================
+                
+                console.log("Simulating: Sending code to backend for compilation...");
+                compileButton.textContent = "Compiling...";
+                compileButton.classList.add('btn-disabled');
+                compileButton.disabled = true;
+
+                setTimeout(() => {
+                    console.log("Simulating: Backend reports successful compilation.");
+                    compileButton.textContent = "Compiled!";
+                    
+                    // Enable the "Build" button
+                    buildButton.classList.remove('btn-disabled');
+                    buildButton.disabled = false;
+                }, 1500);
+            });
+
+            // --- Build Button Logic ---
+            buildButton.addEventListener('click', () => {
+                // =================================================================
+                // CRITICAL NOTE: This is also impossible in GitHub Pages.
+                // =================================================================
+                // You cannot run `jar` or build tools (Maven, Gradle) in a browser.
+                // A real app's backend server would run this command after
+                // compilation, create the .jar file, and provide a link to it.
+                //
+                // We will simulate this by creating a FAKE download.
+                // =================================================================
+                
+                console.log("Simulating: Requesting .jar build from backend...");
+                buildButton.textContent = "Building...";
+                buildButton.classList.add('btn-disabled');
+                buildButton.disabled = true;
+
+                setTimeout(() => {
+                    console.log("Simulating: Backend has built the .jar file.");
+                    buildButton.textContent = "Built!";
+                    
+                    // --- Create a FAKE .jar file for download ---
+                    // This is just a text file *named* .jar to prove the concept.
+                    // A real file would be binary data from your server.
+                    const fakeJarContent = "This is a fake .jar file. In a real app, this would be your compiled plugin.";
+                    const blob = new Blob([fakeJarContent], { type: 'application/java-archive' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    downloadLink.href = url;
+                    downloadLink.download = "MySpeedPlugin.jar";
+                    
+                    buildResult.classList.remove('hidden');
+                    
+                }, 2000);
+            });
+        });
+    </script>
+</body>
+</html>
+

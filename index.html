@@ -3,35 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nothing AI</title>
-    <!-- We are using Tailwind CSS for styling -->
+    <title>Nothing AI - Plugin Editor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        /* Simple dark mode and font */
         body { background-color: #111827; color: #F9FAFB; font-family: 'Inter', sans-serif; }
         .tab-button { background-color: #374151; }
         .tab-button.active { background-color: #4F46E5; }
         .loading-spinner { border-top-color: #4F46E5; }
-        .error-box { background-color: #4B1D1F; border-color: #DC2626; }
-        /* Style for the new project list */
-        .project-item { background-color: #1F2937; border: 1px solid #374151; }
+        .editor-container { min-height: 70vh; }
+        .file-item { padding: 0.5rem; cursor: pointer; border-left: 3px solid transparent; }
+        .file-item.active { border-left: 3px solid #4F46E5; background-color: #1F2937; font-weight: 500; }
+        .chat-message { max-width: 90%; }
+        .ai-message { background-color: #1F2937; }
+        .user-message { background-color: #4F46E5; }
+        .monospaced { font-family: 'Menlo', 'Consolas', 'Courier New', monospace; }
+        /* Scrollbar styles for the editor/chat/file panes */
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #4B5563; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background-color: #1F2937; }
+
+        /* Project List Item Styling */
+        .project-list-item { 
+            background-color: #1F2937; 
+            border: 1px solid #374151;
+            transition: all 0.2s;
+        }
+        .project-list-item:hover {
+            background-color: #2a3440;
+            border-color: #4F46E5;
+        }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body class="p-4 md:p-8">
-    <div class="max-w-4xl mx-auto">
+    <div class="max-w-7xl mx-auto">
         
         <!-- Header -->
-        <header class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-bold text-white">Nothing AI</h1>
-            <div id="auth-container">
-                <!-- Login/Logout button will be managed by script.js -->
-            </div>
+        <header class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+            <h1 class="text-3xl font-bold text-white cursor-pointer" id="home-button">Nothing AI</h1>
+            <div id="auth-container"></div>
         </header>
 
-        <!-- Main Content Area -->
-        <main>
-            <!-- Login prompt. This is hidden when logged in. -->
+        <!-- Home View (The classic interface for generating and browsing) -->
+        <div id="home-view" class="max-w-4xl mx-auto">
+            <!-- Login Prompt (Hidden when logged in) -->
             <div id="login-prompt" class="text-center p-8 bg-gray-800 rounded-lg">
                 <h2 class="text-2xl font-semibold mb-4">Welcome</h2>
                 <p class="text-gray-400">Please log in with Google to create and build your plugins.</p>
@@ -40,45 +55,74 @@
                 </button>
             </div>
 
-            <!-- The main generator. This is hidden until you log in. -->
+            <!-- Main Generator (Visible when logged in) -->
             <div id="generator-container" class="hidden">
                 <h2 class="text-2xl font-semibold mb-4">Create a New Paper Plugin</h2>
-                <div id="error-box" class="hidden p-4 mb-4 text-red-200 border border-red-700 rounded-lg error-box">
-                    <!-- Error messages will go here -->
-                </div>
-                <textarea id="prompt-input" rows="4" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Describe your plugin. The AI will generate the files. You can then build the .jar"></textarea>
+                <div id="error-box" class="hidden p-4 mb-4 text-red-200 border border-red-700 rounded-lg bg-red-900/50"></div>
+                
+                <textarea id="prompt-input" rows="4" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Describe your plugin. E.g., 'A plugin that adds a /fly command and checks if the player has permission.'"></textarea>
                 <button id="generate-button" class="mt-4 w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500 flex items-center justify-center">
                     <span id="generate-button-text">Generate Plugin</span>
                     <div id="generate-spinner" class="hidden loading-spinner w-5 h-5 border-4 border-t-4 border-gray-600 rounded-full animate-spin ml-2"></div>
                 </button>
-
-                <!-- AI Output Section -->
-                <div id="output-container" class="hidden mt-6">
-                    <div class="flex border-b border-gray-700">
-                        <button id="tab-yml" class="tab-button active px-4 py-2 rounded-t-lg">plugin.yml</button>
-                        <button id="tab-java" class="tab-button px-4 py-2 rounded-t-lg">Main.java</button>
-                    </div>
-                    <pre id="code-output" class="p-4 bg-gray-900 rounded-b-lg text-sm overflow-x-auto"><code><!-- Code will appear here --></code></pre>
-                </div>
             </div>
 
-            <!-- NEW SECTION: "My Projects" -->
-            <!-- This is where the list of saved projects will appear. -->
+            <!-- My Projects Section -->
             <div id="projects-container" class="hidden mt-12">
-                <h2 class="text-2xl font-semibold mb-4">My Projects</h2>
-                <div id="projects-list" class="space-y-4">
-                    <!-- 
-                        JavaScript will fill this area with projects like this:
-                        <div class="project-item p-4 rounded-lg">
-                            <h3 class="text-lg font-medium">/heal command</h3>
-                            <p class="text-sm text-gray-400">Project ID: aBcDeF123</p>
-                            <button class="build-button" data-project-id="aBcDeF123">Build</button>
-                        </div>
-                    -->
-                </div>
+                <h2 class="text-2xl font-semibold mb-4 border-b border-gray-800 pb-2">My Projects</h2>
+                <div id="projects-list" class="space-y-4"></div>
             </div>
+        </div>
 
-        </main>
+        <!-- Project Editor View (The new Kodari-like layout) -->
+        <div id="editor-view" class="hidden max-w-full">
+            <h2 id="editor-project-name" class="text-3xl font-bold mb-4 text-white"></h2>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-4 editor-container">
+                
+                <!-- 1. File Explorer / Compile (1/4 or 1/5 width) -->
+                <div class="col-span-1 bg-gray-800 rounded-lg flex flex-col">
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-lg font-semibold">File Explorer</h3>
+                    </div>
+                    <div id="file-explorer" class="flex-grow p-2 space-y-1 custom-scroll overflow-y-auto">
+                        <!-- File list goes here (e.g., Main.java, plugin.yml) -->
+                    </div>
+                    <div class="p-4 border-t border-gray-700">
+                         <button id="compile-button" class="w-full px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-500 flex items-center justify-center">
+                            <span id="compile-button-text">Compile & Build JAR</span>
+                             <div id="compile-spinner" class="hidden loading-spinner w-5 h-5 border-4 border-t-4 border-gray-600 rounded-full animate-spin ml-2"></div>
+                        </button>
+                        <p id="compile-status" class="text-sm mt-2 text-center text-gray-400"></p>
+                    </div>
+                </div>
+
+                <!-- 2. Code Editor (2/4 or 3/5 width) -->
+                <div class="lg:col-span-2 xl:col-span-3 bg-gray-800 rounded-lg flex flex-col">
+                    <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                        <h3 id="current-file-name" class="text-lg font-semibold text-indigo-400"></h3>
+                        <button id="save-button" class="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg font-medium hover:bg-indigo-500">Save Changes</button>
+                    </div>
+                    <!-- Editor is now an expansive text area -->
+                    <textarea id="code-editor" class="flex-grow p-4 bg-gray-900 text-sm overflow-auto monospaced resize-none custom-scroll"></textarea>
+                </div>
+
+                <!-- 3. AI Chat & Explanation (1/4 or 1/5 width) -->
+                <div class="col-span-1 bg-gray-800 rounded-lg flex flex-col">
+                    <div class="p-4 border-b border-gray-700">
+                        <h3 class="text-lg font-semibold">AI Explainer & Chat</h3>
+                    </div>
+                    <div id="chat-window" class="flex-grow p-3 space-y-4 custom-scroll overflow-y-auto">
+                        <!-- AI Explanation and future chat messages go here -->
+                    </div>
+                    <div class="p-3 border-t border-gray-700">
+                        <textarea id="chat-input" rows="2" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm resize-none focus:outline-none" placeholder="Ask the AI to modify or explain the code..."></textarea>
+                        <button id="chat-send-button" class="mt-2 w-full px-4 py-1 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500">Send</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
     </div>
 
     <!-- Firebase SDKs -->
@@ -90,5 +134,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-
 

@@ -1,0 +1,8 @@
+This folder is for Part 3: The Java Build Server (The "Industrial Forge").
+This will be a separate project (e.g., a Java Spring Boot app)
+that you also deploy to Google Cloud Run.
+It will have ONE job:
+Receive mainJava and pluginYml text from an API call.
+Run the real javac and jar commands.
+Return the final .jar file.
+You can build this as your advanced "Version 2.0" feature.

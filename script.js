@@ -14,213 +14,187 @@ const firebaseConfig = {
 };
 // ! ! ! IMPORTANT ! ! !
 
-// Initialize Firebase
+// --- 2. INITIALIZATION ---
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 const provider = new firebase.auth.GoogleAuthProvider();
 
-// --- DOM Elements ---
+// --- 3. DOM ELEMENTS ---
+// Views
+const homeView = document.getElementById('home-view');
+const editorView = document.getElementById('editor-view');
+
+// Home View
 const loginPrompt = document.getElementById('login-prompt');
 const loginButton = document.getElementById('login-button');
 const authContainer = document.getElementById('auth-container');
 const generatorContainer = document.getElementById('generator-container');
 const projectsContainer = document.getElementById('projects-container');
 const projectsList = document.getElementById('projects-list');
-
 const promptInput = document.getElementById('prompt-input');
 const generateButton = document.getElementById('generate-button');
 const generateButtonText = document.getElementById('generate-button-text');
 const generateSpinner = document.getElementById('generate-spinner');
 const errorBox = document.getElementById('error-box');
+const homeButton = document.getElementById('home-button');
 
-const outputContainer = document.getElementById('output-container');
-const tabYml = document.getElementById('tab-yml');
-const tabJava = document.getElementById('tab-java');
-const codeOutput = document.getElementById('code-output');
+// Editor View
+const editorProjectName = document.getElementById('editor-project-name');
+const fileExplorer = document.getElementById('file-explorer');
+const currentFileName = document.getElementById('current-file-name');
+const codeEditor = document.getElementById('code-editor');
+const saveButton = document.getElementById('save-button');
+const chatWindow = document.getElementById('chat-window');
+const chatInput = document.getElementById('chat-input');
+const chatSendButton = document.getElementById('chat-send-button');
+const compileButton = document.getElementById('compile-button');
+const compileButtonText = document.getElementById('compile-button-text');
+const compileSpinner = document.getElementById('compile-spinner');
+const compileStatus = document.getElementById('compile-status');
 
-// --- Global State ---
+// --- 4. GLOBAL STATE ---
 let user = null;
-let currentCode = { pluginYml: '', mainJava: '' };
-let projectsListener = null;
+let currentProject = null;
+let currentFile = 'mainJava'; // Default to Java file
+const FILES_TO_DISPLAY = {
+    mainJava: 'Main.java',
+    pluginYml: 'plugin.yml'
+};
 
-// --- Functions ---
+// --- 5. UI/LOADING/ERROR HELPERS ---
 
-function showLoading(text) {
-    generateButton.disabled = true;
-    generateButtonText.textContent = text;
-    generateSpinner.classList.remove('hidden');
-    errorBox.classList.add('hidden');
-}
-
-function hideLoading() {
-    generateButton.disabled = false;
-    generateButtonText.textContent = 'Generate Plugin';
-    generateSpinner.classList.add('hidden');
-}
-
-function showError(message) {
-    errorBox.textContent = message;
-    errorBox.classList.remove('hidden');
-}
-
-/**
- * NEW: Shows a temporary message on a build button
- */
-function showBuildMessage(button, message, isError = false) {
-    const originalText = button.innerHTML;
-    button.disabled = true;
-    button.textContent = message;
-    
-    if (isError) {
-        button.classList.remove('bg-green-600', 'hover:bg-green-500');
-        button.classList.add('bg-red-600');
+function navigateTo(view, projectId = null) {
+    if (view === 'home') {
+        homeView.classList.remove('hidden');
+        editorView.classList.add('hidden');
+    } else if (view === 'editor' && projectId) {
+        homeView.classList.add('hidden');
+        editorView.classList.remove('hidden');
+        loadProject(projectId);
     }
-
-    setTimeout(() => {
-        button.disabled = false;
-        button.innerHTML = originalText;
-        if (isError) {
-            button.classList.add('bg-green-600', 'hover:bg-green-500');
-            button.classList.remove('bg-red-600');
-        }
-    }, 5000); // Show message for 5 seconds
 }
 
-function updateUI(currentUser) {
+function updateLoading(buttonId, spinnerId, text, isLoading, statusTextElement = null) {
+    const buttonElement = document.getElementById(buttonId);
+    const spinnerElement = document.getElementById(spinnerId);
+    
+    if (isLoading) {
+        buttonElement.disabled = true;
+        document.getElementById(buttonId + '-text').textContent = text;
+        spinnerElement.classList.remove('hidden');
+        if (statusTextElement) statusTextElement.textContent = '';
+    } else {
+        buttonElement.disabled = false;
+        document.getElementById(buttonId + '-text').textContent = text;
+        spinnerElement.classList.add('hidden');
+    }
+}
+
+function showError(message, element = errorBox) {
+    element.textContent = message;
+    element.classList.remove('hidden');
+    // For editor view errors, use the status bar
+    if (element === editorProjectName) {
+        compileStatus.textContent = message;
+        compileStatus.classList.add('text-red-500');
+    }
+    setTimeout(() => {
+        element.classList.add('hidden');
+        if (element === editorProjectName) {
+            compileStatus.textContent = '';
+            compileStatus.classList.remove('text-red-500');
+        }
+    }, 5000);
+}
+
+// --- 6. AUTHENTICATION ---
+
+homeButton.addEventListener('click', () => navigateTo('home'));
+loginButton.addEventListener('click', () => {
+    auth.signInWithPopup(provider).catch(error => console.error("Login failed:", error));
+});
+
+auth.onAuthStateChanged(currentUser => {
     user = currentUser;
     if (user) {
-        loginPrompt.classList.add('hidden');
-        generatorContainer.classList.remove('hidden');
-        projectsContainer.classList.remove('hidden');
-        
-        authContainer.innerHTML = `<button id="logout-button" class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600">Logout</button>`;
-        document.getElementById('logout-button').addEventListener('click', () => auth.signOut());
-
+        showAuthenticatedUI(user);
         listenForProjects(user.uid);
-
     } else {
-        loginPrompt.classList.remove('hidden');
-        generatorContainer.classList.add('hidden');
-        projectsContainer.classList.add('hidden');
-        authContainer.innerHTML = ``;
-        
-        if (projectsListener) {
-            projectsListener();
-            projectsListener = null;
-        }
+        showUnauthenticatedUI();
     }
+});
+
+function showAuthenticatedUI(user) {
+    loginPrompt.classList.add('hidden');
+    generatorContainer.classList.remove('hidden');
+    projectsContainer.classList.remove('hidden');
+    
+    authContainer.innerHTML = `<button id="logout-button" class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600">Logout</button>`;
+    document.getElementById('logout-button').addEventListener('click', () => auth.signOut());
 }
 
-function listenForProjects(userId) {
-    if (projectsListener) {
-        projectsListener();
-    }
+function showUnauthenticatedUI() {
+    loginPrompt.classList.remove('hidden');
+    generatorContainer.classList.add('hidden');
+    projectsContainer.classList.add('hidden');
+    authContainer.innerHTML = ``;
+    navigateTo('home');
+}
 
-    const projectsRef = db.collection('users').doc(userId).collection('projects');
+// --- 7. PROJECT LISTING ---
+
+function listenForProjects(userId) {
+    const projectsRef = db.collection('users').doc(userId).collection('projects').orderBy('createdAt', 'desc');
     
-    projectsListener = projectsRef.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+    projectsRef.onSnapshot(snapshot => {
         if (snapshot.empty) {
             projectsList.innerHTML = `<p class="text-gray-400">You haven't generated any plugins yet.</p>`;
             return;
         }
 
-        let html = '';
+        projectsList.innerHTML = '';
         snapshot.forEach(doc => {
             const project = doc.data();
             const projectId = doc.id;
 
-            html += `
-                <div class="project-item p-4 rounded-lg">
+            const projectItem = document.createElement('div');
+            projectItem.className = 'project-list-item p-4 rounded-lg flex justify-between items-center';
+            projectItem.innerHTML = `
+                <div>
                     <h3 class="text-lg font-medium">${project.name}</h3>
-                    <p class="text-sm text-gray-400 mb-3">Saved: ${new Date(project.createdAt).toLocaleString()}</p>
-                    <button 
-                        class="build-button px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-500" 
-                        data-project-id="${projectId}"
-                        data-user-id="${userId}"
-                    >
-                        Build Plugin
-                    </button>
-                    <span class="build-status-text ml-4 text-sm text-gray-400"></span>
+                    <p class="text-sm text-gray-400">ID: ${projectId.substring(0, 8)}...</p>
                 </div>
+                <button class="open-button px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500" data-project-id="${projectId}">
+                    Open Editor
+                </button>
             `;
-        });
-        
-        projectsList.innerHTML = html;
-
-        // --- THIS IS THE NEW BUILD BUTTON LOGIC ---
-        // Add event listeners for ALL build buttons
-        document.querySelectorAll('.build-button').forEach(button => {
-            button.addEventListener('click', handleBuildClick);
+            projectsList.appendChild(projectItem);
         });
 
+        // Event delegation for opening the editor
+        projectsList.querySelectorAll('.open-button').forEach(button => {
+            button.addEventListener('click', (e) => {
+                navigateTo('editor', e.target.dataset.projectId);
+            });
+        });
     }, error => {
         console.error("Error listening for projects: ", error);
         projectsList.innerHTML = `<p class="text-red-400">Error loading projects.</p>`;
     });
 }
 
-/**
- * NEW: Handles the "Build Plugin" button click
- */
-async function handleBuildClick(event) {
-    const button = event.target;
-    const { projectId } = button.dataset;
+// --- 8. PROJECT GENERATION (Directs to Editor) ---
 
-    if (!user || !projectId) {
-        showBuildMessage(button, 'Error: Not logged in', true);
-        return;
-    }
-
-    // Show a loading state on the button
-    const statusText = button.nextElementSibling;
-    statusText.textContent = 'Starting build...';
-    button.disabled = true;
-
-    try {
-        const token = await user.getIdToken();
-        const response = await fetch('/api/startBuild', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify({ projectId: projectId })
-        });
-
-        if (!response.ok) {
-            throw new Error('Failed to start build job.');
-        }
-
-        // --- SUCCESS! ---
-        // This is the simplest v1. We just tell the user where to go.
-        statusText.textContent = 'Build started! Check the "Actions" tab on your GitHub repo in 2-3 mins.';
-        
-        // Re-enable button after 10 seconds
-        setTimeout(() => {
-            button.disabled = false;
-            statusText.textContent = '';
-        }, 10000);
-
-    } catch (error) {
-        console.error('Error starting build:', error);
-        statusText.textContent = `Error: ${error.message}`;
-        button.disabled = false;
-    }
-}
-
+generateButton.addEventListener('click', handleGenerateClick);
 
 async function handleGenerateClick() {
-    if (!user) {
-        showError('You must be logged in to generate a plugin.');
-        return;
-    }
+    if (!user) return showError('You must be logged in.');
     const prompt = promptInput.value;
-    if (!prompt) {
-        showError('Please enter a description for your plugin.');
-        return;
-    }
-    showLoading('Contacting REAL AI...');
+    if (!prompt) return showError('Please enter a description for your plugin.');
+
+    updateLoading('generate-button', 'generate-spinner', 'Generating Code...', true);
+    
     try {
         const token = await user.getIdToken();
         const response = await fetch('/api/generate', {
@@ -231,61 +205,220 @@ async function handleGenerateClick() {
             },
             body: JSON.stringify({ prompt: prompt })
         });
+
         if (!response.ok) {
             const errorData = await response.json();
-            throw new Error(errorData.error || 'The AI failed to generate the code.');
+            throw new Error(errorData.error || 'The AI failed to generate and save the code.');
         }
+
         const data = await response.json();
-        currentCode = { pluginYml: data.pluginYml, mainJava: data.mainJava };
+        promptInput.value = '';
+        updateLoading('generate-button', 'generate-spinner', 'Plugin Generated!', false);
 
-        outputContainer.classList.remove('hidden');
-        codeOutput.textContent = currentCode.pluginYml;
-        tabYml.classList.add('active');
-        tabJava.classList.remove('active');
+        // --- NEW ACTION: Navigate directly to the new project's editor ---
+        navigateTo('editor', data.projectId);
 
-        showLoading('Saving project...');
+    } catch (error) {
+        console.error('Generation Error:', error);
+        showError(error.message);
+        updateLoading('generate-button', 'generate-spinner', 'Generate Plugin', false);
+    }
+}
+
+// --- 9. EDITOR FUNCTIONALITY ---
+
+async function loadProject(projectId) {
+    currentProject = null;
+    editorProjectName.textContent = 'Loading...';
+    codeEditor.value = '';
+    chatWindow.innerHTML = '<p class="text-gray-400 p-2">Loading project data...</p>';
+    compileStatus.textContent = '';
+    compileStatus.classList.remove('text-yellow-400', 'text-red-500');
+
+    try {
+        const docRef = db.collection('users').doc(user.uid).collection('projects').doc(projectId);
+        const doc = await docRef.get();
         
-        const saveResponse = await fetch('/api/saveProject', {
+        if (!doc.exists) {
+            return showError('Project not found.', editorProjectName);
+        }
+
+        // Add a temporary owner field for the compile link
+        currentProject = { id: doc.id, owner: user.uid, ...doc.data() }; 
+        editorProjectName.textContent = currentProject.name;
+        
+        // Populate Editor
+        displayFile('mainJava');
+        
+        // Populate File Explorer
+        renderFileExplorer();
+        
+        // Populate Chat (Initial explanation)
+        renderAiExplanation(currentProject.explanation);
+        
+        // Set up editor event listeners (only once)
+        saveButton.removeEventListener('click', handleSaveClick);
+        saveButton.addEventListener('click', handleSaveClick);
+        compileButton.removeEventListener('click', handleCompileClick);
+        compileButton.addEventListener('click', handleCompileClick);
+        chatSendButton.removeEventListener('click', handleChatSendClick);
+        chatSendButton.addEventListener('click', handleChatSendClick);
+        
+    } catch (error) {
+        console.error("Error loading project:", error);
+        showError('Failed to load project data. Please try again.', editorProjectName);
+    }
+}
+
+function renderFileExplorer() {
+    fileExplorer.innerHTML = '';
+    Object.keys(FILES_TO_DISPLAY).forEach(key => {
+        const fileElement = document.createElement('div');
+        fileElement.className = `file-item ${key === currentFile ? 'active' : ''} rounded`;
+        fileElement.textContent = FILES_TO_DISPLAY[key];
+        fileElement.dataset.fileKey = key;
+        
+        fileElement.addEventListener('click', () => displayFile(key));
+        fileExplorer.appendChild(fileElement);
+    });
+}
+
+function displayFile(fileKey) {
+    // 1. Save current changes before switching
+    if (currentProject && currentFile && codeEditor.value) {
+        currentProject[currentFile] = codeEditor.value;
+    }
+    
+    // 2. Load new file
+    currentFile = fileKey;
+    currentFileName.textContent = FILES_TO_DISPLAY[fileKey];
+    codeEditor.value = currentProject[fileKey] || '';
+    
+    // 3. Update active state in explorer
+    renderFileExplorer();
+}
+
+function renderAiExplanation(explanation) {
+    chatWindow.innerHTML = `
+        <div class="chat-message ai-message rounded-lg p-3 text-sm">
+            <h4 class="font-bold text-indigo-300 mb-2">AI Explanation:</h4>
+            ${explanation.replace(/\n/g, '<br>')}
+        </div>
+    `;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+}
+
+// --- 10. EDITOR ACTIONS ---
+
+async function handleSaveClick() {
+    if (!currentProject || !user) return showError('Login or project error.', editorProjectName);
+
+    // Save content from the editor to the currentProject state
+    if (currentFile) {
+        currentProject[currentFile] = codeEditor.value;
+    }
+    
+    saveButton.disabled = true;
+    saveButton.textContent = 'Saving...';
+    
+    try {
+        const projectRef = db.collection('users').doc(user.uid).collection('projects').doc(currentProject.id);
+
+        await projectRef.update({
+            mainJava: currentProject.mainJava,
+            pluginYml: currentProject.pluginYml,
+        });
+        
+        saveButton.textContent = 'Saved!';
+        setTimeout(() => { saveButton.textContent = 'Save Changes'; saveButton.disabled = false; }, 2000);
+        
+    } catch (error) {
+        console.error('Save Error:', error);
+        showError('Failed to save project changes.', editorProjectName);
+        saveButton.textContent = 'Save Failed';
+        setTimeout(() => { saveButton.textContent = 'Save Changes'; saveButton.disabled = false; }, 5000);
+    }
+}
+
+async function handleCompileClick() {
+    if (!currentProject || !user) return showError('Login or project error.', editorProjectName);
+    
+    // 1. Ensure latest changes are saved before compiling
+    if (currentFile) {
+        currentProject[currentFile] = codeEditor.value;
+    }
+    
+    updateLoading('compile-button', 'compile-spinner', 'Starting Build...', true, compileStatus);
+    compileStatus.textContent = 'Saving final changes...';
+    
+    try {
+        const token = await user.getIdToken();
+        const projectRef = db.collection('users').doc(user.uid).collection('projects').doc(currentProject.id);
+
+        // Update database with latest code
+        await projectRef.update({
+            mainJava: currentProject.mainJava,
+            pluginYml: currentProject.pluginYml,
+        });
+
+        compileStatus.textContent = 'Saved. Triggering GitHub Bot...';
+
+        // 2. Trigger the build bot
+        const buildResponse = await fetch('/api/startBuild', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify({
-                name: prompt.substring(0, 50) || 'Untitled Plugin',
-                pluginYml: data.pluginYml,
-                mainJava: data.mainJava
-            })
+            body: JSON.stringify({ projectId: currentProject.id })
         });
-
-        if (!saveResponse.ok) {
-            throw new Error('AI worked, but failed to save project.');
+        
+        if (!buildResponse.ok) {
+            const errorData = await buildResponse.json();
+            throw new Error(errorData.error || 'Build trigger failed at Vercel API level.');
         }
-        hideLoading();
-        promptInput.value = '';
+
+        // Success!
+        const githubUser = document.querySelector('#auth-container button').textContent.match(/\((.*?)\)/)?.[1] || user.displayName; // Placeholder for GITHUB_USER
+        
+        compileStatus.classList.remove('text-gray-400');
+        compileStatus.classList.add('text-yellow-400');
+        compileStatus.innerHTML = `Build started! Check your <a href="https://github.com/${githubUser}/${currentProject.name}/actions" target="_blank" class="underline font-medium">GitHub Actions</a> in 2 mins.`;
 
     } catch (error) {
-        console.error('Error:', error);
-        showError(error.message);
-        hideLoading();
+        console.error('Compile Error:', error);
+        compileStatus.classList.remove('text-gray-400', 'text-yellow-400');
+        compileStatus.classList.add('text-red-500');
+        compileStatus.textContent = `Build Error: ${error.message}`;
+        
+    } finally {
+        updateLoading('compile-button', 'compile-spinner', 'Compile & Build JAR', false);
     }
 }
 
-// --- Event Listeners ---
-loginButton.addEventListener('click', () => {
-    auth.signInWithPopup(provider).catch(error => console.error("Login failed:", error));
-});
-generateButton.addEventListener('click', handleGenerateClick);
-tabYml.addEventListener('click', () => {
-    tabYml.classList.add('active');
-    tabJava.classList.remove('active');
-    codeOutput.textContent = currentCode.pluginYml;
-});
-tabJava.addEventListener('click', () => {
-    tabJava.classList.add('active');
-    tabYml.classList.remove('active');
-    codeOutput.textContent = currentCode.mainJava;
-});
-
-// --- Startup ---
-auth.onAuthStateChanged(updateUI);
+// Placeholder for future chat functionality
+async function handleChatSendClick() {
+    const message = chatInput.value.trim();
+    if (!message) return;
+    
+    const token = await user.getIdToken();
+    
+    // Append user message
+    chatWindow.innerHTML += `
+        <div class="chat-message user-message rounded-lg p-3 text-sm ml-auto">
+            ${message}
+        </div>
+    `;
+    
+    chatInput.value = '';
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+    
+    // Placeholder AI response
+    chatWindow.innerHTML += `
+        <div class="chat-message ai-message rounded-lg p-3 text-sm">
+            <h4 class="font-bold text-indigo-300 mb-1">AI Thinking...</h4>
+            <p class="text-gray-400">The AI code modification feature is complex and pending implementation in a later version. For now, you can edit the code directly.</p>
+        </div>
+    `;
+    chatWindow.scrollTop = chatWindow.scrollHeight;
+      }

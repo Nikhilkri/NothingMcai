@@ -6,32 +6,47 @@
     <title>Nothing AI - Plugin Editor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #111827; color: #F9FAFB; font-family: 'Inter', sans-serif; }
-        .tab-button { background-color: #374151; }
-        .tab-button.active { background-color: #4F46E5; }
-        .loading-spinner { border-top-color: #4F46E5; }
+        /* Base Dark Theme (Deep Black Background) */
+        body { background-color: #000000; color: #F9FAFB; font-family: 'Inter', sans-serif; }
+        .header-bg { background-color: #000000; }
+        
+        /* General Containers (Darker than body, used for modules) */
+        .module-bg { background-color: #111; } 
+        
+        /* Editor Styles */
         .editor-container { min-height: 70vh; }
         .file-item { padding: 0.5rem; cursor: pointer; border-left: 3px solid transparent; }
-        .file-item.active { border-left: 3px solid #4F46E5; background-color: #1F2937; font-weight: 500; }
-        .chat-message { max-width: 90%; }
-        .ai-message { background-color: #1F2937; }
-        .user-message { background-color: #4F46E5; }
+        .file-item.active { border-left: 3px solid #4F46E5; background-color: #1A1A1A; font-weight: 500; }
         .monospaced { font-family: 'Menlo', 'Consolas', 'Courier New', monospace; }
-        /* Scrollbar styles for the editor/chat/file panes */
-        .custom-scroll::-webkit-scrollbar { width: 8px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background-color: #4B5563; border-radius: 4px; }
-        .custom-scroll::-webkit-scrollbar-track { background-color: #1F2937; }
-
-        /* Project List Item Styling */
+        
+        /* Home Input & Project Styles (Sleek Kodari look) */
+        .kodari-input-container { 
+            background-color: #1A1A1A; 
+            border: 1px solid #333;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); 
+        }
         .project-list-item { 
-            background-color: #1F2937; 
-            border: 1px solid #374151;
+            background-color: #1A1A1A; 
+            border: 1px solid #333;
             transition: all 0.2s;
         }
         .project-list-item:hover {
-            background-color: #2a3440;
+            background-color: #222;
             border-color: #4F46E5;
         }
+        
+        /* Chat Styles */
+        .ai-message { background-color: #1A1A1A; border: 1px solid #333; }
+        .user-message { background-color: #4F46E5; }
+        
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 8px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background-color: #4B5563; border-radius: 4px; }
+        .custom-scroll::-webkit-scrollbar-track { background-color: #000; }
+
+        /* Ensuring the code editor background is pitch black */
+        #code-editor { background-color: #000000; }
+        #chat-input { background-color: #000000; }
     </style>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
@@ -39,84 +54,98 @@
     <div class="max-w-7xl mx-auto">
         
         <!-- Header -->
-        <header class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
-            <h1 class="text-3xl font-bold text-white cursor-pointer" id="home-button">Nothing AI</h1>
+        <header class="header-bg flex justify-between items-center mb-6 border-b border-gray-900 pb-4 sticky top-0 z-10">
+            <h1 class="text-3xl font-bold text-white cursor-pointer flex items-center" id="home-button">
+                <!-- Using a simple, modern logo element -->
+                <span class="text-indigo-500 text-4xl mr-2 font-extrabold">π</span> Nothing AI
+            </h1>
             <div id="auth-container"></div>
         </header>
 
-        <!-- Home View (The classic interface for generating and browsing) -->
-        <div id="home-view" class="max-w-4xl mx-auto">
-            <!-- Login Prompt (Hidden when logged in) -->
-            <div id="login-prompt" class="text-center p-8 bg-gray-800 rounded-lg">
-                <h2 class="text-2xl font-semibold mb-4">Welcome</h2>
-                <p class="text-gray-400">Please log in with Google to create and build your plugins.</p>
-                <button id="login-button" class="mt-4 px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500">
+        <!-- Home View (The main generation and project list page) -->
+        <div id="home-view" class="max-w-3xl mx-auto pt-16">
+            <h2 class="text-4xl font-light text-center mb-10 text-gray-200">
+                Hi! I'm Nothing AI :)<br><span class="text-indigo-400 font-medium">Let's build something magical together!</span>
+            </h2>
+            
+            <!-- Login Prompt (Kodari Style) -->
+            <div id="login-prompt" class="text-center p-8 kodari-input-container rounded-xl">
+                <p class="text-gray-400 mb-4">Please log in with Google to create and build your plugins.</p>
+                <button id="login-button" class="px-6 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500">
                     Login with Google
                 </button>
             </div>
 
             <!-- Main Generator (Visible when logged in) -->
             <div id="generator-container" class="hidden">
-                <h2 class="text-2xl font-semibold mb-4">Create a New Paper Plugin</h2>
                 <div id="error-box" class="hidden p-4 mb-4 text-red-200 border border-red-700 rounded-lg bg-red-900/50"></div>
                 
-                <textarea id="prompt-input" rows="4" class="w-full p-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" placeholder="Describe your plugin. E.g., 'A plugin that adds a /fly command and checks if the player has permission.'"></textarea>
-                <button id="generate-button" class="mt-4 w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-500 flex items-center justify-center">
-                    <span id="generate-button-text">Generate Plugin</span>
-                    <div id="generate-spinner" class="hidden loading-spinner w-5 h-5 border-4 border-t-4 border-gray-600 rounded-full animate-spin ml-2"></div>
-                </button>
-            </div>
+                <!-- Main Prompt Box (Sleek Input) -->
+                <div class="kodari-input-container rounded-xl p-4 mb-16">
+                    <textarea id="prompt-input" rows="3" class="w-full p-2 bg-transparent border-none text-white focus:outline-none resize-none" placeholder="generate me a minecraft plugin with /g for change the gamemode..."></textarea>
+                    <div class="flex justify-between items-center pt-2">
+                         <span class="text-xs text-gray-500">Minecraft Java Plugin</span>
+                         <button id="generate-button" class="px-5 py-2 bg-indigo-600 text-white rounded-full font-medium hover:bg-indigo-500 flex items-center justify-center">
+                            <span id="generate-button-text">Generate</span>
+                            <div id="generate-spinner" class="hidden loading-spinner w-4 h-4 border-2 border-t-2 border-gray-200 rounded-full animate-spin ml-2"></div>
+                        </button>
+                    </div>
+                </div>
 
-            <!-- My Projects Section -->
-            <div id="projects-container" class="hidden mt-12">
-                <h2 class="text-2xl font-semibold mb-4 border-b border-gray-800 pb-2">My Projects</h2>
-                <div id="projects-list" class="space-y-4"></div>
+                <!-- My Projects Section -->
+                <div id="projects-container" class="hidden mt-12">
+                    <h2 class="text-xl font-semibold mb-4 border-b border-gray-900 pb-2">Your Projects</h2>
+                    <div id="projects-list" class="space-y-3"></div>
+                </div>
             </div>
         </div>
 
-        <!-- Project Editor View (The new Kodari-like layout) -->
+        <!-- Project Editor View (The three-pane layout) -->
         <div id="editor-view" class="hidden max-w-full">
-            <h2 id="editor-project-name" class="text-3xl font-bold mb-4 text-white"></h2>
+            <h2 id="editor-project-name" class="text-2xl font-bold mb-4 text-gray-400 border-b border-gray-900 pb-3"></h2>
             
             <div class="grid grid-cols-1 lg:grid-cols-4 xl:grid-cols-5 gap-4 editor-container">
                 
                 <!-- 1. File Explorer / Compile (1/4 or 1/5 width) -->
-                <div class="col-span-1 bg-gray-800 rounded-lg flex flex-col">
-                    <div class="p-4 border-b border-gray-700">
-                        <h3 class="text-lg font-semibold">File Explorer</h3>
+                <div class="col-span-1 module-bg rounded-lg flex flex-col kodari-input-container">
+                    <div class="p-4 border-b border-gray-800 flex justify-between items-center">
+                        <h3 class="text-lg font-semibold">Files</h3>
+                        <button id="save-button" class="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg font-medium hover:bg-indigo-500">Save</button>
                     </div>
-                    <div id="file-explorer" class="flex-grow p-2 space-y-1 custom-scroll overflow-y-auto">
+                    
+                    <div id="file-explorer" class="flex-grow p-2 space-y-1 custom-scroll overflow-y-auto text-sm">
                         <!-- File list goes here (e.g., Main.java, plugin.yml) -->
                     </div>
-                    <div class="p-4 border-t border-gray-700">
+                    
+                    <div class="p-4 border-t border-gray-800">
                          <button id="compile-button" class="w-full px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-500 flex items-center justify-center">
                             <span id="compile-button-text">Compile & Build JAR</span>
                              <div id="compile-spinner" class="hidden loading-spinner w-5 h-5 border-4 border-t-4 border-gray-600 rounded-full animate-spin ml-2"></div>
                         </button>
-                        <p id="compile-status" class="text-sm mt-2 text-center text-gray-400"></p>
+                        <p id="compile-status" class="text-xs mt-2 text-center text-gray-400"></p>
                     </div>
                 </div>
 
                 <!-- 2. Code Editor (2/4 or 3/5 width) -->
-                <div class="lg:col-span-2 xl:col-span-3 bg-gray-800 rounded-lg flex flex-col">
-                    <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-                        <h3 id="current-file-name" class="text-lg font-semibold text-indigo-400"></h3>
-                        <button id="save-button" class="px-3 py-1 bg-indigo-600 text-white text-sm rounded-lg font-medium hover:bg-indigo-500">Save Changes</button>
+                <div class="lg:col-span-2 xl:col-span-3 module-bg rounded-lg flex flex-col kodari-input-container">
+                    <div class="p-4 border-b border-gray-800">
+                        <h3 id="current-file-name" class="text-lg font-semibold text-indigo-400 monospaced">Select a file to edit</h3>
                     </div>
-                    <!-- Editor is now an expansive text area -->
-                    <textarea id="code-editor" class="flex-grow p-4 bg-gray-900 text-sm overflow-auto monospaced resize-none custom-scroll"></textarea>
+                    <!-- The editor now takes up the main body, background is pitch black -->
+                    <textarea id="code-editor" class="flex-grow p-4 text-sm overflow-auto monospaced resize-none custom-scroll focus:outline-none"></textarea>
                 </div>
 
                 <!-- 3. AI Chat & Explanation (1/4 or 1/5 width) -->
-                <div class="col-span-1 bg-gray-800 rounded-lg flex flex-col">
-                    <div class="p-4 border-b border-gray-700">
-                        <h3 class="text-lg font-semibold">AI Explainer & Chat</h3>
+                <div class="col-span-1 module-bg rounded-lg flex flex-col kodari-input-container">
+                    <div class="p-4 border-b border-gray-800">
+                        <h3 class="text-lg font-semibold">Chat</h3>
                     </div>
-                    <div id="chat-window" class="flex-grow p-3 space-y-4 custom-scroll overflow-y-auto">
+                    <div id="chat-window" class="flex-grow p-3 space-y-4 custom-scroll overflow-y-auto text-xs">
                         <!-- AI Explanation and future chat messages go here -->
+                        <p class="text-gray-400">Ask the AI to modify or explain your code...</p>
                     </div>
-                    <div class="p-3 border-t border-gray-700">
-                        <textarea id="chat-input" rows="2" class="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm resize-none focus:outline-none" placeholder="Ask the AI to modify or explain the code..."></textarea>
+                    <div class="p-3 border-t border-gray-800">
+                        <textarea id="chat-input" rows="2" class="w-full p-2 border border-gray-700 rounded-lg text-white text-sm resize-none focus:outline-none" placeholder="Ask Kodari..."></textarea>
                         <button id="chat-send-button" class="mt-2 w-full px-4 py-1 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-500">Send</button>
                     </div>
                 </div>

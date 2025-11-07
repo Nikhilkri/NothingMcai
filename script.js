@@ -14,11 +14,10 @@ const firebaseConfig = {
 };
 // ! ! ! IMPORTANT ! ! !
 
-
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.firestore(); // Our database
+const db = firebase.firestore();
 const provider = new firebase.auth.GoogleAuthProvider();
 
 // --- DOM Elements ---
@@ -26,8 +25,8 @@ const loginPrompt = document.getElementById('login-prompt');
 const loginButton = document.getElementById('login-button');
 const authContainer = document.getElementById('auth-container');
 const generatorContainer = document.getElementById('generator-container');
-const projectsContainer = document.getElementById('projects-container'); // NEW: The "My Projects" container
-const projectsList = document.getElementById('projects-list'); // NEW: The list itself
+const projectsContainer = document.getElementById('projects-container');
+const projectsList = document.getElementById('projects-list');
 
 const promptInput = document.getElementById('prompt-input');
 const generateButton = document.getElementById('generate-button');
@@ -43,13 +42,10 @@ const codeOutput = document.getElementById('code-output');
 // --- Global State ---
 let user = null;
 let currentCode = { pluginYml: '', mainJava: '' };
-let projectsListener = null; // NEW: This will be our real-time database listener
+let projectsListener = null;
 
 // --- Functions ---
 
-/**
- * Shows a loading spinner on the generate button
- */
 function showLoading(text) {
     generateButton.disabled = true;
     generateButtonText.textContent = text;
@@ -57,85 +53,83 @@ function showLoading(text) {
     errorBox.classList.add('hidden');
 }
 
-/**
- * Hides the loading spinner
- */
 function hideLoading() {
     generateButton.disabled = false;
     generateButtonText.textContent = 'Generate Plugin';
     generateSpinner.classList.add('hidden');
 }
 
-/**
- * Shows an error message
- */
 function showError(message) {
     errorBox.textContent = message;
     errorBox.classList.remove('hidden');
 }
 
 /**
- * Updates the UI based on login state
+ * NEW: Shows a temporary message on a build button
  */
+function showBuildMessage(button, message, isError = false) {
+    const originalText = button.innerHTML;
+    button.disabled = true;
+    button.textContent = message;
+    
+    if (isError) {
+        button.classList.remove('bg-green-600', 'hover:bg-green-500');
+        button.classList.add('bg-red-600');
+    }
+
+    setTimeout(() => {
+        button.disabled = false;
+        button.innerHTML = originalText;
+        if (isError) {
+            button.classList.add('bg-green-600', 'hover:bg-green-500');
+            button.classList.remove('bg-red-600');
+        }
+    }, 5000); // Show message for 5 seconds
+}
+
 function updateUI(currentUser) {
     user = currentUser;
     if (user) {
-        // User is logged in
         loginPrompt.classList.add('hidden');
         generatorContainer.classList.remove('hidden');
-        projectsContainer.classList.remove('hidden'); // NEW: Show the "My Projects" section
+        projectsContainer.classList.remove('hidden');
         
-        // Create logout button
         authContainer.innerHTML = `<button id="logout-button" class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600">Logout</button>`;
         document.getElementById('logout-button').addEventListener('click', () => auth.signOut());
 
-        // NEW: Start listening for this user's projects
         listenForProjects(user.uid);
 
     } else {
-        // User is logged out
         loginPrompt.classList.remove('hidden');
         generatorContainer.classList.add('hidden');
-        projectsContainer.classList.add('hidden'); // NEW: Hide the "My Projects" section
-
-        // Show login button
-        authContainer.innerHTML = ``; // No button in header when logged out
+        projectsContainer.classList.add('hidden');
+        authContainer.innerHTML = ``;
         
-        // NEW: Stop listening to the database if we log out
         if (projectsListener) {
-            projectsListener(); // This detaches the listener
+            projectsListener();
             projectsListener = null;
         }
     }
 }
 
-/**
- * NEW: Listens to the database in real-time
- */
 function listenForProjects(userId) {
-    // If we're already listening, stop the old listener
     if (projectsListener) {
         projectsListener();
     }
 
     const projectsRef = db.collection('users').doc(userId).collection('projects');
     
-    // onSnapshot is a real-time listener. It auto-updates
-    // whenever the database changes!
-    projectsListener = projectsRef.onSnapshot(snapshot => {
+    projectsListener = projectsRef.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
         if (snapshot.empty) {
             projectsList.innerHTML = `<p class="text-gray-400">You haven't generated any plugins yet.</p>`;
             return;
         }
 
-        // We have projects, let's build the HTML
         let html = '';
         snapshot.forEach(doc => {
             const project = doc.data();
-            const projectId = doc.id; // This is the unique ID (e.g., aBcDeF123)
+            const projectId = doc.id;
 
-            // We create a card for each project
-            // Note the data-project-id attribute on the button. This is CRITICAL.
             html += `
                 <div class="project-item p-4 rounded-lg">
                     <h3 class="text-lg font-medium">${project.name}</h3>
@@ -143,23 +137,21 @@ function listenForProjects(userId) {
                     <button 
                         class="build-button px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-500" 
                         data-project-id="${projectId}"
+                        data-user-id="${userId}"
                     >
-                        Build Plugin (Coming Soon)
+                        Build Plugin
                     </button>
+                    <span class="build-status-text ml-4 text-sm text-gray-400"></span>
                 </div>
             `;
         });
         
-        // Update the list on the webpage
         projectsList.innerHTML = html;
 
-        // NEW: We will add event listeners for all the new "Build" buttons
-        // For now, they just show an alert.
+        // --- THIS IS THE NEW BUILD BUTTON LOGIC ---
+        // Add event listeners for ALL build buttons
         document.querySelectorAll('.build-button').forEach(button => {
-            button.addEventListener('click', () => {
-                const projectId = button.dataset.projectId;
-                alert(`Build button clicked for Project ID: ${projectId}\nThis feature is the final step!`);
-            });
+            button.addEventListener('click', handleBuildClick);
         });
 
     }, error => {
@@ -168,26 +160,68 @@ function listenForProjects(userId) {
     });
 }
 
-
 /**
- * Handles the "Generate" button click
+ * NEW: Handles the "Build Plugin" button click
  */
+async function handleBuildClick(event) {
+    const button = event.target;
+    const { projectId } = button.dataset;
+
+    if (!user || !projectId) {
+        showBuildMessage(button, 'Error: Not logged in', true);
+        return;
+    }
+
+    // Show a loading state on the button
+    const statusText = button.nextElementSibling;
+    statusText.textContent = 'Starting build...';
+    button.disabled = true;
+
+    try {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/startBuild', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ projectId: projectId })
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to start build job.');
+        }
+
+        // --- SUCCESS! ---
+        // This is the simplest v1. We just tell the user where to go.
+        statusText.textContent = 'Build started! Check the "Actions" tab on your GitHub repo in 2-3 mins.';
+        
+        // Re-enable button after 10 seconds
+        setTimeout(() => {
+            button.disabled = false;
+            statusText.textContent = '';
+        }, 10000);
+
+    } catch (error) {
+        console.error('Error starting build:', error);
+        statusText.textContent = `Error: ${error.message}`;
+        button.disabled = false;
+    }
+}
+
+
 async function handleGenerateClick() {
     if (!user) {
         showError('You must be logged in to generate a plugin.');
         return;
     }
-
     const prompt = promptInput.value;
     if (!prompt) {
         showError('Please enter a description for your plugin.');
         return;
     }
-
     showLoading('Contacting REAL AI...');
-
     try {
-        // --- Step 1: Call the AI ---
         const token = await user.getIdToken();
         const response = await fetch('/api/generate', {
             method: 'POST',
@@ -197,23 +231,18 @@ async function handleGenerateClick() {
             },
             body: JSON.stringify({ prompt: prompt })
         });
-
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.error || 'The AI failed to generate the code.');
         }
-
         const data = await response.json();
         currentCode = { pluginYml: data.pluginYml, mainJava: data.mainJava };
 
-        // Show the code in the tabs
         outputContainer.classList.remove('hidden');
         codeOutput.textContent = currentCode.pluginYml;
         tabYml.classList.add('active');
         tabJava.classList.remove('active');
 
-        // --- Step 2: Save the Project ---
-        // This part now happens *after* the AI is successful
         showLoading('Saving project...');
         
         const saveResponse = await fetch('/api/saveProject', {
@@ -223,7 +252,7 @@ async function handleGenerateClick() {
                 'Authorization': `Bearer ${token}`
             },
             body: JSON.stringify({
-                name: prompt.substring(0, 50), // Use the first 50 chars of the prompt as a name
+                name: prompt.substring(0, 50) || 'Untitled Plugin',
                 pluginYml: data.pluginYml,
                 mainJava: data.mainJava
             })
@@ -232,11 +261,8 @@ async function handleGenerateClick() {
         if (!saveResponse.ok) {
             throw new Error('AI worked, but failed to save project.');
         }
-
-        // Success!
         hideLoading();
-        promptInput.value = ''; // Clear the input box
-        // The real-time listener will automatically see this new project and update the list!
+        promptInput.value = '';
 
     } catch (error) {
         console.error('Error:', error);
@@ -249,15 +275,12 @@ async function handleGenerateClick() {
 loginButton.addEventListener('click', () => {
     auth.signInWithPopup(provider).catch(error => console.error("Login failed:", error));
 });
-
 generateButton.addEventListener('click', handleGenerateClick);
-
 tabYml.addEventListener('click', () => {
     tabYml.classList.add('active');
     tabJava.classList.remove('active');
     codeOutput.textContent = currentCode.pluginYml;
 });
-
 tabJava.addEventListener('click', () => {
     tabJava.classList.add('active');
     tabYml.classList.remove('active');
@@ -265,5 +288,4 @@ tabJava.addEventListener('click', () => {
 });
 
 // --- Startup ---
-// Listen for changes in login state
 auth.onAuthStateChanged(updateUI);

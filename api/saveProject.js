@@ -1,71 +1,76 @@
-// This is our new "Save to Database" serverless function
-// It uses the "Admin SDK" to act as a secure administrator
+// This is the FIXED version that uses modern 'import' syntax
 
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getAuth } from 'firebase-admin/auth';
 
-// 1. Initialize the Admin SDK
-// We securely get our key from the Vercel Environment Variable
-const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_JSON);
-
-// Only initialize if it hasn't been already
-if (!getApps().length) {
+// --- Initialize Firebase Admin ---
+// This is the key: we check if the app is ALREADY initialized
+// This prevents errors in a serverless environment
+if (getApps().length === 0) {
+  const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_JSON);
   initializeApp({
-    credential: cert(serviceAccount)
+    credential: cert(serviceAccount),
   });
 }
 
 const db = getFirestore();
 const auth = getAuth();
 
-// This is the main function that Vercel will run
-export default async (req, res) => {
-  // We only allow POST requests
+// --- Main Serverless Function ---
+export default async function handler(req, res) {
+  // 1. Only allow POST requests
   if (req.method !== 'POST') {
-    return res.status(405).send({ error: 'Method Not Allowed' });
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
   try {
-    // 1. Get the data from the frontend
-    const { idToken, prompt, pluginYml, mainJava } = req.body;
-    
-    if (!idToken || !prompt || !pluginYml || !mainJava) {
-      return res.status(400).send({ error: 'Missing required fields' });
+    // 2. Get the user's login token from the header
+    const { authorization } = req.headers;
+    if (!authorization || !authorization.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized: No token provided' });
+    }
+    const token = authorization.split('Bearer ')[1];
+
+    // 3. Verify the token (check if the user is real)
+    const decodedToken = await auth.verifyIdToken(token);
+    const userId = decodedToken.uid;
+
+    // 4. Get the project data from the request body
+    const { name, pluginYml, mainJava } = req.body;
+    if (!name || !pluginYml || !mainJava) {
+      return res.status(400).json({ error: 'Bad Request: Missing project data' });
     }
 
-    // 2. VERIFY THE USER
-    // This is the "security check". We check if the token is real.
-    const decodedToken = await auth.verifyIdToken(idToken);
-    const uid = decodedToken.uid; // This is the user's unique ID
-
-    // 3. Prepare the data for the database
-    const projectData = {
-      userId: uid,
-      prompt: prompt,
+    // 5. Create the new project object
+    const newProject = {
+      name: name,
       pluginYml: pluginYml,
       mainJava: mainJava,
+      userId: userId,
       createdAt: new Date().toISOString(), // Save the current time
-      name: prompt.substring(0, 30) + '...' // Use the prompt as a name
     };
 
-    // 4. SAVE TO FIRESTORE
-    // We create a new "project" inside a "users" collection
-    // This is like: users -> (user's ID) -> projects -> (new project ID)
-    const projectRef = await db.collection('users').doc(uid).collection('projects').add(projectData);
+    // 6. Save the project to the database
+    // This creates a document in: /users/{userId}/projects/{newProjectId}
+    const projectRef = await db.collection('users').doc(userId).collection('projects').add(newProject);
 
-    // 5. Send a "Success" message back
-    console.log('Project saved with ID:', projectRef.id);
-    res.status(200).json({ success: true, projectId: projectRef.id });
-
+    // 7. Success!
+    res.status(200).json({
+      message: 'Project saved successfully!',
+      projectId: projectRef.id,
+    });
+    
   } catch (error) {
     console.error('Error in /api/saveProject:', error);
-    
-    // Handle specific errors
+    // Check for different error types
     if (error.code === 'auth/id-token-expired') {
-      return res.status(401).send({ error: 'Authentication token expired, please log in again.' });
+      return res.status(401).json({ error: 'Unauthorized: Token expired' });
     }
-    
-    res.status(500).send({ error: 'Failed to save project.', details: error.message });
+    if (error.code === 'permission-denied') {
+      return res.status(403).json({ error: 'Forbidden: Database permission denied.' });
+    }
+    // General error
+    res.status(500).json({ error: 'Internal Server Error: Could not save project.' });
   }
-};
+}

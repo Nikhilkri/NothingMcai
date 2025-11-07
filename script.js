@@ -75,18 +75,16 @@ function navigateTo(view, projectId = null) {
     }
 }
 
-function updateLoading(buttonId, spinnerId, text, isLoading, statusTextElement = null) {
-    const buttonElement = document.getElementById(buttonId);
-    const spinnerElement = document.getElementById(spinnerId);
+function updateLoading(buttonElement, spinnerElement, text, isLoading, statusTextElement = null, originalText = 'Generate') {
     
     if (isLoading) {
         buttonElement.disabled = true;
-        document.getElementById(buttonId + '-text').textContent = text;
+        document.getElementById(buttonElement.id + '-text').textContent = text;
         spinnerElement.classList.remove('hidden');
         if (statusTextElement) statusTextElement.textContent = '';
     } else {
         buttonElement.disabled = false;
-        document.getElementById(buttonId + '-text').textContent = text;
+        document.getElementById(buttonElement.id + '-text').textContent = originalText;
         spinnerElement.classList.add('hidden');
     }
 }
@@ -130,7 +128,9 @@ function showAuthenticatedUI(user) {
     generatorContainer.classList.remove('hidden');
     projectsContainer.classList.remove('hidden');
     
-    authContainer.innerHTML = `<button id="logout-button" class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600">Logout</button>`;
+    // Display name in the header
+    const displayName = user.displayName ? user.displayName.split(' ')[0] : 'User';
+    authContainer.innerHTML = `<span class="text-sm mr-4 text-gray-400">Hi, ${displayName}!</span><button id="logout-button" class="px-3 py-1 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600 text-sm">Logout</button>`;
     document.getElementById('logout-button').addEventListener('click', () => auth.signOut());
 }
 
@@ -193,7 +193,7 @@ async function handleGenerateClick() {
     const prompt = promptInput.value;
     if (!prompt) return showError('Please enter a description for your plugin.');
 
-    updateLoading('generate-button', 'generate-spinner', 'Generating Code...', true);
+    updateLoading(generateButton, generateSpinner, 'Thinking...', true);
     
     try {
         const token = await user.getIdToken();
@@ -213,15 +213,15 @@ async function handleGenerateClick() {
 
         const data = await response.json();
         promptInput.value = '';
-        updateLoading('generate-button', 'generate-spinner', 'Plugin Generated!', false);
-
-        // --- NEW ACTION: Navigate directly to the new project's editor ---
+        updateLoading(generateButton, generateSpinner, 'Generate', false);
+        
+        // --- Navigate directly to the new project's editor ---
         navigateTo('editor', data.projectId);
 
     } catch (error) {
         console.error('Generation Error:', error);
         showError(error.message);
-        updateLoading('generate-button', 'generate-spinner', 'Generate Plugin', false);
+        updateLoading(generateButton, generateSpinner, 'Generate', false);
     }
 }
 
@@ -256,7 +256,7 @@ async function loadProject(projectId) {
         // Populate Chat (Initial explanation)
         renderAiExplanation(currentProject.explanation);
         
-        // Set up editor event listeners (only once)
+        // Set up editor event listeners 
         saveButton.removeEventListener('click', handleSaveClick);
         saveButton.addEventListener('click', handleSaveClick);
         compileButton.removeEventListener('click', handleCompileClick);
@@ -348,7 +348,7 @@ async function handleCompileClick() {
         currentProject[currentFile] = codeEditor.value;
     }
     
-    updateLoading('compile-button', 'compile-spinner', 'Starting Build...', true, compileStatus);
+    updateLoading(compileButton, compileSpinner, 'Starting Build...', true, compileStatus);
     compileStatus.textContent = 'Saving final changes...';
     
     try {
@@ -379,7 +379,8 @@ async function handleCompileClick() {
         }
 
         // Success!
-        const githubUser = document.querySelector('#auth-container button').textContent.match(/\((.*?)\)/)?.[1] || user.displayName; // Placeholder for GITHUB_USER
+        const githubUserSpan = document.querySelector('#auth-container span');
+        const githubUser = githubUserSpan ? githubUserSpan.textContent.replace('Hi, ', '').replace('!', '') : 'user-repo-name'; 
         
         compileStatus.classList.remove('text-gray-400');
         compileStatus.classList.add('text-yellow-400');
@@ -392,7 +393,7 @@ async function handleCompileClick() {
         compileStatus.textContent = `Build Error: ${error.message}`;
         
     } finally {
-        updateLoading('compile-button', 'compile-spinner', 'Compile & Build JAR', false);
+        updateLoading(compileButton, compileSpinner, 'Compile & Build JAR', false);
     }
 }
 
@@ -400,8 +401,6 @@ async function handleCompileClick() {
 async function handleChatSendClick() {
     const message = chatInput.value.trim();
     if (!message) return;
-    
-    const token = await user.getIdToken();
     
     // Append user message
     chatWindow.innerHTML += `
@@ -421,4 +420,4 @@ async function handleChatSendClick() {
         </div>
     `;
     chatWindow.scrollTop = chatWindow.scrollHeight;
-      }
+              }

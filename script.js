@@ -18,194 +18,252 @@ const firebaseConfig = {
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.firestore(); 
+const db = firebase.firestore(); // Our database
+const provider = new firebase.auth.GoogleAuthProvider();
 
-const BACKEND_URL = '';
+// --- DOM Elements ---
+const loginPrompt = document.getElementById('login-prompt');
+const loginButton = document.getElementById('login-button');
+const authContainer = document.getElementById('auth-container');
+const generatorContainer = document.getElementById('generator-container');
+const projectsContainer = document.getElementById('projects-container'); // NEW: The "My Projects" container
+const projectsList = document.getElementById('projects-list'); // NEW: The list itself
 
-document.addEventListener('DOMContentLoaded', () => {
-    // Get all the new Login/Logout buttons
-    const authContainer = document.getElementById('auth-container');
-    const loginButton = document.getElementById('loginButton');
-    const logoutButton = document.getElementById('logoutButton');
-    const userInfo = document.getElementById('userInfo');
-    const userName = document.getElementById('userName');
-    
-    // Get the main content sections
-    const mainContent = document.getElementById('mainContent');
-    const loginMessage = document.getElementById('loginMessage');
-    
-    // Get all the "Generator" buttons (same as before)
-    const generateButton = document.getElementById('generateButton');
-    const buildButton = document.getElementById('buildButton');
-    const promptInput = document.getElementById('promptInput');
-    const loadingIndicator = document.getElementById('loadingIndicator');
-    const outputSection = document.getElementById('outputSection');
-    const errorMessage = document.getElementById('errorMessage');
-    const pluginYmlContent = document.getElementById('pluginYmlContent');
-    const mainJavaContent = document.getElementById('mainJavaContent');
-    const buildLoading = document.getElementById('buildLoading');
-    const buildResult = document.getElementById('buildResult');
-    const downloadLink = document.getElementById('downloadLink');
+const promptInput = document.getElementById('prompt-input');
+const generateButton = document.getElementById('generate-button');
+const generateButtonText = document.getElementById('generate-button-text');
+const generateSpinner = document.getElementById('generate-spinner');
+const errorBox = document.getElementById('error-box');
 
-    // --- NEW LOADING INDICATOR TEXT ---
-    const loadingText = document.querySelector('#loadingIndicator p'); // Get the text element
+const outputContainer = document.getElementById('output-container');
+const tabYml = document.getElementById('tab-yml');
+const tabJava = document.getElementById('tab-java');
+const codeOutput = document.getElementById('code-output');
 
-    // --- AUTHENTICATION LOGIC (Same as before) ---
-    auth.onAuthStateChanged(user => {
-        if (user) {
-            mainContent.classList.remove('hidden');
-            loginMessage.classList.add('hidden');
-            userName.textContent = user.displayName;
-            userInfo.classList.remove('hidden');
-            loginButton.classList.add('hidden');
-            authContainer.style.display = 'flex';
-        } else {
-            mainContent.classList.add('hidden');
-            loginMessage.classList.remove('hidden');
-            userInfo.classList.add('hidden');
-            loginButton.classList.remove('hidden');
-            authContainer.style.display = 'flex';
-        }
-    });
-    loginButton.addEventListener('click', () => {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        auth.signInWithPopup(provider).catch(error => {
-            console.error("Login Error:", error);
-            showError("Failed to log in with Google: " + error.message);
-        });
-    });
-    logoutButton.addEventListener('click', () => { auth.signOut(); });
+// --- Global State ---
+let user = null;
+let currentCode = { pluginYml: '', mainJava: '' };
+let projectsListener = null; // NEW: This will be our real-time database listener
 
-    // --- *** UPDATED GENERATOR LOGIC *** ---
-    generateButton.addEventListener('click', async () => {
-        const prompt = promptInput.value;
-        if (!prompt) {
-            showError("Please enter a prompt.");
-            return;
-        }
+// --- Functions ---
+
+/**
+ * Shows a loading spinner on the generate button
+ */
+function showLoading(text) {
+    generateButton.disabled = true;
+    generateButtonText.textContent = text;
+    generateSpinner.classList.remove('hidden');
+    errorBox.classList.add('hidden');
+}
+
+/**
+ * Hides the loading spinner
+ */
+function hideLoading() {
+    generateButton.disabled = false;
+    generateButtonText.textContent = 'Generate Plugin';
+    generateSpinner.classList.add('hidden');
+}
+
+/**
+ * Shows an error message
+ */
+function showError(message) {
+    errorBox.textContent = message;
+    errorBox.classList.remove('hidden');
+}
+
+/**
+ * Updates the UI based on login state
+ */
+function updateUI(currentUser) {
+    user = currentUser;
+    if (user) {
+        // User is logged in
+        loginPrompt.classList.add('hidden');
+        generatorContainer.classList.remove('hidden');
+        projectsContainer.classList.remove('hidden'); // NEW: Show the "My Projects" section
         
-        // Check if user is logged in
-        const user = auth.currentUser;
-        if (!user) {
-            showError("You must be logged in to generate a plugin.");
+        // Create logout button
+        authContainer.innerHTML = `<button id="logout-button" class="px-4 py-2 bg-gray-700 text-white rounded-lg font-medium hover:bg-gray-600">Logout</button>`;
+        document.getElementById('logout-button').addEventListener('click', () => auth.signOut());
+
+        // NEW: Start listening for this user's projects
+        listenForProjects(user.uid);
+
+    } else {
+        // User is logged out
+        loginPrompt.classList.remove('hidden');
+        generatorContainer.classList.add('hidden');
+        projectsContainer.classList.add('hidden'); // NEW: Hide the "My Projects" section
+
+        // Show login button
+        authContainer.innerHTML = ``; // No button in header when logged out
+        
+        // NEW: Stop listening to the database if we log out
+        if (projectsListener) {
+            projectsListener(); // This detaches the listener
+            projectsListener = null;
+        }
+    }
+}
+
+/**
+ * NEW: Listens to the database in real-time
+ */
+function listenForProjects(userId) {
+    // If we're already listening, stop the old listener
+    if (projectsListener) {
+        projectsListener();
+    }
+
+    const projectsRef = db.collection('users').doc(userId).collection('projects');
+    
+    // onSnapshot is a real-time listener. It auto-updates
+    // whenever the database changes!
+    projectsListener = projectsRef.onSnapshot(snapshot => {
+        if (snapshot.empty) {
+            projectsList.innerHTML = `<p class="text-gray-400">You haven't generated any plugins yet.</p>`;
             return;
         }
 
-        resetUI();
-        loadingText.textContent = "Contacting REAL AI... this may take a moment."; // Set text
-        loadingIndicator.classList.remove('hidden');
-        generateButton.disabled = true;
-        generateButton.classList.add('btn-disabled');
+        // We have projects, let's build the HTML
+        let html = '';
+        snapshot.forEach(doc => {
+            const project = doc.data();
+            const projectId = doc.id; // This is the unique ID (e.g., aBcDeF123)
 
-        let generatedData; // To store AI response
+            // We create a card for each project
+            // Note the data-project-id attribute on the button. This is CRITICAL.
+            html += `
+                <div class="project-item p-4 rounded-lg">
+                    <h3 class="text-lg font-medium">${project.name}</h3>
+                    <p class="text-sm text-gray-400 mb-3">Saved: ${new Date(project.createdAt).toLocaleString()}</p>
+                    <button 
+                        class="build-button px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-500" 
+                        data-project-id="${projectId}"
+                    >
+                        Build Plugin (Coming Soon)
+                    </button>
+                </div>
+            `;
+        });
+        
+        // Update the list on the webpage
+        projectsList.innerHTML = html;
 
-        try {
-            // --- Step 1: Call the AI (Same as before) ---
-            const response = await fetch(`${BACKEND_URL}/api/generate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: prompt })
-            });
-            generatedData = await response.json();
-            if (!response.ok) {
-                throw new Error(generatedData.error || 'Unknown server error');
-            }
-
-            // --- Step 2: NEW! Save to Database ---
-            loadingText.textContent = "Saving project to your account..."; // Update text
-            
-            // Get the user's secret ID Token
-            const idToken = await user.getIdToken();
-
-            const saveResponse = await fetch(`${BACKEND_URL}/api/saveProject`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    idToken: idToken,
-                    prompt: prompt,
-                    pluginYml: generatedData.pluginYml,
-                    mainJava: generatedData.mainJava
-                })
-            });
-
-            const saveData = await saveResponse.json();
-            if (!saveResponse.ok) {
-                throw new Error(saveData.error || 'Failed to save project');
-            }
-
-            console.log("Project saved successfully!", saveData.projectId);
-
-            // --- Step 3: Show results (Same as before) ---
-            pluginYmlContent.textContent = generatedData.pluginYml;
-            mainJavaContent.textContent = generatedData.mainJava;
-
-            loadingIndicator.classList.add('hidden');
-            outputSection.classList.remove('hidden');
-            buildButton.disabled = false;
-            buildButton.classList.remove('btn-disabled');
-
-        } catch (err) {
-            console.error(err);
-            showError(err.message);
-        } finally {
-            generateButton.disabled = false;
-            generateButton.classList.remove('btn-disabled');
-        }
-    });
-
-    // --- BUILD BUTTON LOGIC (Same as before) ---
-    buildButton.addEventListener('click', async () => {
-        buildButton.disabled = true;
-        buildButton.classList.add('btn-disabled');
-        buildResult.classList.add('hidden');
-        buildLoading.classList.remove('hidden');
-
-        const javaCode = mainJavaContent.textContent;
-        const ymlCode = pluginYmlContent.textContent;
-
-        try {
-            const response = await fetch(`${BACKEND_URL}/api/build`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ javaCode, ymlCode })
-            });
-            if (!response.ok) { throw new Error('Build server failed.'); }
-            const blob = await response.blob();
-            const url = window.URL.createObjectURL(blob);
-            downloadLink.href = url;
-            downloadLink.download = "MyPlugin-simulated.jar";
-            buildLoading.classList.add('hidden');
-            buildResult.classList.remove('hidden');
-        } catch (err) {
-            showError(err.message);
-            buildLoading.classList.add('hidden');
-        }
-    });
-    
-    // Helper functions (Same as before)
-    function showError(message) {
-        errorMessage.textContent = 'Error: ' + message;
-        errorMessage.classList.remove('hidden');
-        loadingIndicator.classList.add('hidden');
-    }
-    function resetUI() {
-        errorMessage.classList.add('hidden');
-        outputSection.classList.add('hidden');
-        buildResult.classList.add('hidden');
-        buildLoading.classList.add('hidden');
-    }
-    const tabs = document.querySelectorAll('.tab-button');
-    const tabContents = document.querySelectorAll('.tab-content');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            tab.classList.add('active');
-            const target = tab.getAttribute('data-tab');
-            tabContents.forEach(content => {
-                content.id === `tab-${target}`
-                    ? content.classList.remove('hidden')
-                    : content.classList.add('hidden');
+        // NEW: We will add event listeners for all the new "Build" buttons
+        // For now, they just show an alert.
+        document.querySelectorAll('.build-button').forEach(button => {
+            button.addEventListener('click', () => {
+                const projectId = button.dataset.projectId;
+                alert(`Build button clicked for Project ID: ${projectId}\nThis feature is the final step!`);
             });
         });
+
+    }, error => {
+        console.error("Error listening for projects: ", error);
+        projectsList.innerHTML = `<p class="text-red-400">Error loading projects.</p>`;
     });
+}
+
+
+/**
+ * Handles the "Generate" button click
+ */
+async function handleGenerateClick() {
+    if (!user) {
+        showError('You must be logged in to generate a plugin.');
+        return;
+    }
+
+    const prompt = promptInput.value;
+    if (!prompt) {
+        showError('Please enter a description for your plugin.');
+        return;
+    }
+
+    showLoading('Contacting REAL AI...');
+
+    try {
+        // --- Step 1: Call the AI ---
+        const token = await user.getIdToken();
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ prompt: prompt })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'The AI failed to generate the code.');
+        }
+
+        const data = await response.json();
+        currentCode = { pluginYml: data.pluginYml, mainJava: data.mainJava };
+
+        // Show the code in the tabs
+        outputContainer.classList.remove('hidden');
+        codeOutput.textContent = currentCode.pluginYml;
+        tabYml.classList.add('active');
+        tabJava.classList.remove('active');
+
+        // --- Step 2: Save the Project ---
+        // This part now happens *after* the AI is successful
+        showLoading('Saving project...');
+        
+        const saveResponse = await fetch('/api/saveProject', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                name: prompt.substring(0, 50), // Use the first 50 chars of the prompt as a name
+                pluginYml: data.pluginYml,
+                mainJava: data.mainJava
+            })
+        });
+
+        if (!saveResponse.ok) {
+            throw new Error('AI worked, but failed to save project.');
+        }
+
+        // Success!
+        hideLoading();
+        promptInput.value = ''; // Clear the input box
+        // The real-time listener will automatically see this new project and update the list!
+
+    } catch (error) {
+        console.error('Error:', error);
+        showError(error.message);
+        hideLoading();
+    }
+}
+
+// --- Event Listeners ---
+loginButton.addEventListener('click', () => {
+    auth.signInWithPopup(provider).catch(error => console.error("Login failed:", error));
 });
+
+generateButton.addEventListener('click', handleGenerateClick);
+
+tabYml.addEventListener('click', () => {
+    tabYml.classList.add('active');
+    tabJava.classList.remove('active');
+    codeOutput.textContent = currentCode.pluginYml;
+});
+
+tabJava.addEventListener('click', () => {
+    tabJava.classList.add('active');
+    tabYml.classList.remove('active');
+    codeOutput.textContent = currentCode.mainJava;
+});
+
+// --- Startup ---
+// Listen for changes in login state
+auth.onAuthStateChanged(updateUI);

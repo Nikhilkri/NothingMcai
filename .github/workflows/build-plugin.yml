@@ -1,1 +1,142 @@
+# This is the "Instruction Manual" for your GitHub Build Robot
+# It tells the robot exactly what to do when your "Build" button is pressed.
 
+name: "Build Minecraft Plugin"
+
+on:
+  # This makes the "Build" button work.
+  # It allows our Vercel server to "call" this robot.
+  workflow_dispatch:
+    inputs:
+      userId:
+        description: 'The Firebase User ID'
+        required: true
+      projectId:
+        description: 'The Firestore Project ID'
+        required: true
+      runId:
+        description: 'A unique ID for this build run'
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # Use a standard Linux machine
+
+    steps:
+      # 1. Get the tool files (build.gradle.kts, etc.)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up the Java JDK (v17), which is required for Minecraft
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          # Cache Gradle packages to speed up future builds
+          cache: 'gradle'
+
+      # 3. Set up a Node.js environment
+      # We need this to run a script to talk to Firebase
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      # 4. Install the 'firebase-admin' tool
+      - name: Install Firebase Admin
+        run: npm install firebase-admin
+
+      # 5. This is the magic script
+      # It connects to Firebase, downloads the user's files,
+      # and puts them in the correct folders for Gradle to find.
+      - name: Fetch files from Firestore
+        env:
+          # Give the script the secret key and the IDs from the Vercel server
+          FIREBASE_ADMIN_JSON: ${{ secrets.FIREBASE_ADMIN_JSON }}
+          USER_ID: ${{ github.event.inputs.userId }}
+          PROJECT_ID: ${{ github.event.inputs.projectId }}
+        run: |
+          node -e "
+            const { initializeApp, cert } = require('firebase-admin/app');
+            const { getFirestore } = require('firebase-admin/firestore');
+            const fs = require('fs');
+            
+            async function fetchFiles() {
+              try {
+                console.log('Initializing Firebase...');
+                const serviceAccount = JSON.parse(process.env.FIREBASE_ADMIN_JSON);
+                initializeApp({ credential: cert(serviceAccount) });
+                
+                const db = getFirestore();
+                
+                console.log('Fetching document from path:', \`users/\${process.env.USER_ID}/projects/\${process.env.PROJECT_ID}\`);
+                const docRef = db.collection('users').doc(process.env.USER_ID).collection('projects').doc(process.env.PROJECT_ID);
+                const doc = await doc.get();
+                
+                if (!doc.exists) {
+                  console.error('Document not found!');
+                  process.exit(1);
+                }
+                
+                const data = doc.data();
+                const mainJava = data.mainJava;
+                const pluginYml = data.pluginYml;
+                
+                if (!mainJava || !pluginYml) {
+                  console.error('Java code or plugin.yml is missing from the document!');
+                  process.exit(1);
+                }
+                
+                console.log('Files fetched. Writing to disk...');
+                
+                // --- Create the Java file ---
+                // We need to guess the package path from the code
+                const packageMatch = mainJava.match(/package\s+([a-zA-Z0-9_.]+);/);
+                if (!packageMatch) {
+                  console.error('Could not find package name in Java file!');
+                  process.exit(1);
+                }
+                const packagePath = packageMatch[1].replace(/\./g, '/');
+                const javaDir = \`src/main/java/\${packagePath}\`;
+                
+                // We need to guess the class name
+                const classMatch = mainJava.match(/public\s+class\s+([a-zA-Z0-9_]+)\s+extends\s+JavaPlugin/);
+                if (!classMatch) {
+                  console.error('Could not find main class name in Java file!');
+                  process.exit(1);
+                }
+                const className = classMatch[1];
+                
+                fs.mkdirSync(javaDir, { recursive: true });
+                fs.writeFileSync(\`\${javaDir}/\${className}.java\`, mainJava);
+                
+                // --- Create the plugin.yml file ---
+                const resourceDir = 'src/main/resources';
+                fs.mkdirSync(resourceDir, { recursive: true });
+                fs.writeFileSync(\`\${resourceDir}/plugin.yml\`, pluginYml);
+                
+                console.log('Java and YML files created successfully.');
+                
+              } catch (e) {
+                console.error('Script failed:', e);
+                process.exit(1);
+              }
+            }
+            
+            fetchFiles();
+          "
+
+      # 6. Run the Gradle build!
+      # This finds the files we just created and builds the .jar
+      # We use 'gradle build' because setup-java installs it for us
+      - name: Build with Gradle
+        run: gradle build
+
+      # 7. Upload the finished .jar file
+      # This makes it available for the user to download
+      - name: Upload plugin artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NothingAI-Plugin-${{ github.event.inputs.runId }}
+          path: build/libs/MyPlugin.jar
